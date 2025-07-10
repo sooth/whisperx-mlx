@@ -12,6 +12,7 @@ from whisperx.audio import load_audio
 from whisperx.diarize import DiarizationPipeline, assign_word_speakers
 from whisperx.types import AlignedTranscriptionResult, TranscriptionResult
 from whisperx.utils import LANGUAGES, TO_LANGUAGE_CODE, get_writer
+from whisperx.process_separation import ProcessSeparatedPipeline
 
 
 def transcribe_task(args: dict, parser: argparse.ArgumentParser):
@@ -24,7 +25,7 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     # fmt: off
 
     model_name: str = args.pop("model")
-    backend: str = args.pop("backend", "auto")
+    backend: str = args.pop("backend")
     batch_size: int = args.pop("batch_size")
     model_dir: str = args.pop("model_dir")
     model_cache_only: bool = args.pop("model_cache_only")
@@ -121,26 +122,53 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     # Part 1: VAD & ASR Loop
     results = []
     tmp_results = []
-    # model = load_model(model_name, device=device, download_root=model_dir)
-    model = load_model(
-        model_name,
-        device=device,
-        device_index=device_index,
-        download_root=model_dir,
-        compute_type=compute_type,
-        language=args["language"],
-        asr_options=asr_options,
-        vad_method=vad_method,
-        vad_options={
-            "chunk_size": chunk_size,
-            "vad_onset": vad_onset,
-            "vad_offset": vad_offset,
-        },
-        task=task,
-        local_files_only=model_cache_only,
-        threads=faster_whisper_threads,
-        backend=backend,
-    )
+    
+    # Use process separation for MLX backend to avoid PyTorch/MLX conflicts
+    if backend == "mlx":
+        print(">>Using process-separated pipeline for MLX backend...")
+        # Enable word timestamps if align_model is specified
+        if align_model and not no_align:
+            asr_options["word_timestamps"] = True
+        model = ProcessSeparatedPipeline(
+            asr_backend=backend,
+            model_name=model_name,
+            vad_method=vad_method,
+            device="mlx",  # MLX always uses MLX device
+            language=args["language"],
+            compute_type=compute_type,
+            asr_options=asr_options,
+            vad_options={
+                "chunk_size": chunk_size,
+                "vad_onset": vad_onset,
+                "vad_offset": vad_offset,
+            },
+            task=task,
+            threads=faster_whisper_threads,
+            quantization=args.get("quantization"),
+            batch_size=batch_size,
+            use_batch_processing=True,
+        )
+    else:
+        # Standard model loading for other backends
+        model = load_model(
+            model_name,
+            backend=backend,
+            device=device,
+            device_index=device_index,
+            download_root=model_dir,
+            compute_type=compute_type,
+            language=args["language"],
+            asr_options=asr_options,
+            vad_method=vad_method,
+            vad_options={
+                "chunk_size": chunk_size,
+                "vad_onset": vad_onset,
+                "vad_offset": vad_offset,
+            },
+            task=task,
+            local_files_only=model_cache_only,
+            threads=faster_whisper_threads,
+        )
 
     for audio_path in args.pop("audio"):
         audio = load_audio(audio_path)
@@ -161,7 +189,8 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     torch.cuda.empty_cache()
 
     # Part 2: Align Loop
-    if not no_align:
+    # Skip alignment for MLX backend when word timestamps are enabled (already included)
+    if not no_align and not (backend == "mlx" and align_model):
         tmp_results = results
         results = []
         align_model, align_metadata = load_align_model(
@@ -232,19 +261,5 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
             results.append((result, input_audio_path))
     # >> Write
     for result, audio_path in results:
-        # Handle case where result might be a TranscriptionResult object
-        if isinstance(result, dict):
-            # Already processed
-            if "language" not in result and not no_align:
-                result["language"] = align_language
-        else:
-            # Convert TranscriptionResult to dict if needed
-            result = dict(result)
-        
-        # Ensure language is set
-        if "language" not in result:
-            # Use the language from the first segment or model's detected language
-            if result.get("segments") and len(result["segments"]) > 0:
-                result["language"] = result.get("language", args.get("language", "en"))
-        
+        result["language"] = align_language
         writer(result, audio_path, writer_args)
