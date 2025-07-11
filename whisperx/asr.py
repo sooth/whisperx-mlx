@@ -236,7 +236,7 @@ def load_model(
             vad_model = Silero(**default_vad_options)
         elif vad_method == "pyannote":
             # VAD runs on CPU for now
-            vad_device = torch.device("cpu")
+            vad_device = "cpu"
             # Remove device from options if it exists to avoid duplicate argument
             pyannote_options = default_vad_options.copy()
             pyannote_options.pop('device', None)

@@ -517,6 +517,10 @@ def benchmark_batch_processing():
                     print(f"  {name}: {speedup:.2f}x faster")
 
 
+# Alias for compatibility
+MlxBatchOptimizedBackend = OptimizedBatchMLXWhisperBackend
+
+
 if __name__ == "__main__":
     # Run benchmark
     benchmark_batch_processing()
