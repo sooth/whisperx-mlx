@@ -1,15 +1,141 @@
-import os
-from typing import Optional
-import warnings
+"""
+WhisperX ASR Module - MLX Backend Only
 
-from whisperx.backends import FasterWhisperBackend, MlxWhisperBackend
-from whisperx.backends.base import WhisperBackend
+This module provides the main ASR interface for WhisperX using only the MLX backend.
+Supports both standard and batch-optimized processing.
+"""
+import os
+import platform
+from typing import Optional, Union, Dict, Any, List
+
+import numpy as np
+import torch
+
+from whisperx.audio import load_audio, SAMPLE_RATE
+from whisperx.types import TranscriptionResult, SingleSegment
+from whisperx.vads import Vad, Silero, Pyannote
+
+
+class MLXWhisperPipeline:
+    """
+    Pipeline wrapper for MLX Whisper model to maintain API compatibility.
+    """
+    
+    def __init__(self, backend, vad_model=None):
+        self.backend = backend
+        self.vad_model = vad_model
+    
+    def transcribe(
+        self,
+        audio: Union[str, np.ndarray],
+        batch_size: int = 8,
+        chunk_size: int = 30,
+        print_progress: bool = False,
+        combined_progress: bool = False,
+        verbose: bool = False,
+        **kwargs
+    ) -> TranscriptionResult:
+        """
+        Transcribe audio using the MLX backend.
+        
+        If VAD is enabled, audio will be segmented first and then transcribed.
+        """
+        # Load audio if path provided
+        if isinstance(audio, str):
+            audio = load_audio(audio)
+        
+        # If no VAD, transcribe directly
+        if self.vad_model is None:
+            return self.backend.transcribe(
+                audio,
+                batch_size=batch_size,
+                num_workers=0,
+                print_progress=print_progress,
+                combined_progress=combined_progress,
+                verbose=verbose,
+                **kwargs
+            )
+        
+        # Segment audio with VAD
+        segments = self._segment_audio_with_vad(audio, chunk_size)
+        
+        # Process segments
+        if hasattr(self.backend, 'transcribe_batch') and batch_size > 1:
+            # Use batch processing if available
+            return self.backend.transcribe_batch(
+                audio,
+                segments,
+                batch_size=batch_size,
+                print_progress=print_progress,
+                combined_progress=combined_progress,
+                verbose=verbose,
+                **kwargs
+            )
+        else:
+            # Standard sequential processing
+            all_segments = []
+            language = None
+            
+            for segment in segments:
+                start_sample = int(segment['start'] * SAMPLE_RATE)
+                end_sample = int(segment['end'] * SAMPLE_RATE)
+                segment_audio = audio[start_sample:end_sample]
+                
+                # Transcribe segment
+                result = self.backend.transcribe(
+                    segment_audio,
+                    batch_size=1,
+                    print_progress=False,
+                    verbose=verbose,
+                    **kwargs
+                )
+                
+                # Extract language from first segment
+                if language is None and result.get('language'):
+                    language = result['language']
+                
+                # Adjust timestamps and add segments
+                for seg in result.get('segments', []):
+                    seg['start'] += segment['start']
+                    seg['end'] += segment['start']
+                    all_segments.append(seg)
+            
+            return {
+                'segments': all_segments,
+                'language': language or 'en'
+            }
+    
+    def _segment_audio_with_vad(self, audio: np.ndarray, chunk_size: int) -> List[Dict]:
+        """Segment audio using VAD."""
+        # Pre-process audio for VAD
+        if issubclass(type(self.vad_model), Vad):
+            waveform = self.vad_model.preprocess_audio(audio)
+            merge_chunks = self.vad_model.merge_chunks
+        else:
+            waveform = Pyannote.preprocess_audio(audio)
+            merge_chunks = Pyannote.merge_chunks
+        
+        # Get VAD segments
+        vad_segments = self.vad_model({"waveform": waveform, "sample_rate": SAMPLE_RATE})
+        
+        # Merge chunks
+        vad_segments = merge_chunks(
+            vad_segments,
+            chunk_size,
+            onset=self.vad_model.vad_onset if hasattr(self.vad_model, 'vad_onset') else 0.5,
+            offset=self.vad_model.vad_offset if hasattr(self.vad_model, 'vad_offset') else 0.363,
+        )
+        
+        return vad_segments
+    
+    def detect_language(self, audio: np.ndarray) -> str:
+        """Detect language of audio."""
+        return self.backend.detect_language(audio)
 
 
 def load_model(
     whisper_arch: str,
-    backend: str = "faster-whisper",
-    device: str = "cuda",
+    device: str = "cpu",
     device_index: int = 0,
     compute_type: str = "float16",
     asr_options: Optional[dict] = None,
@@ -20,33 +146,47 @@ def load_model(
     download_root: Optional[str] = None,
     local_files_only: bool = False,
     threads: int = 4,
-) -> WhisperBackend:
-    """Load a Whisper model for inference with the specified backend.
+    backend: str = "auto",
+    batch_size: int = 8,
+    **kwargs
+) -> MLXWhisperPipeline:
+    """
+    Load a Whisper model for inference with MLX backend.
     
     Args:
         whisper_arch: The name of the Whisper model to load.
-        backend: The backend to use ("faster-whisper" or "mlx").
-        device: The device to load the model on.
-        device_index: The device index to use.
-        compute_type: The compute type to use for the model.
-        asr_options: ASR options dictionary.
-        language: The language of the model.
-        vad_method: The VAD method to use.
-        vad_options: VAD options dictionary.
-        task: The task to perform ("transcribe" or "translate").
-        download_root: The root directory to download the model to.
-        local_files_only: If True, avoid downloading the file and return the path to the local cached file if it exists.
-        threads: The number of CPU threads to use per worker.
+        device: The device to load the model on (always 'mlx' for this fork).
+        device_index: Device index (not used for MLX).
+        compute_type: Compute type (float16, float32, int4).
+        asr_options: ASR options to pass to the model.
+        language: Model language.
+        vad_method: VAD method to use ('pyannote' or 'silero').
+        vad_options: VAD options.
+        task: Task to perform ('transcribe' or 'translate').
+        download_root: Directory to download models to.
+        local_files_only: If True, only use local files.
+        threads: Number of threads (not used for MLX).
+        backend: Backend to use ('auto', 'mlx', 'standard', 'batch').
+        batch_size: Batch size for processing.
         
     Returns:
-        A WhisperBackend instance.
+        MLXWhisperPipeline: The loaded model pipeline.
     """
+    # Force MLX backend for this fork
+    if device == "cuda" and platform.system() == "Darwin":
+        device = "cpu"  # Use CPU for VAD on macOS
     
-    # Select backend implementation
-    if backend == "faster-whisper":
-        return FasterWhisperBackend(
+    # Determine which MLX backend to use
+    if backend == "auto":
+        # Auto-select based on batch size
+        backend = "batch" if batch_size > 1 else "standard"
+    
+    # Load the appropriate MLX backend
+    if backend in ["batch", "mlx_batch"]:
+        from whisperx.backends.mlx_batch_optimized import MlxBatchOptimizedBackend
+        mlx_backend = MlxBatchOptimizedBackend(
             model=whisper_arch,
-            device=device,
+            device="mlx",
             device_index=device_index,
             compute_type=compute_type,
             download_root=download_root,
@@ -57,70 +197,50 @@ def load_model(
             vad_options=vad_options,
             language=language,
             task=task,
-        )
-    elif backend == "mlx":
-        if MlxWhisperBackend is None:
-            raise ImportError(
-                "MLX backend is not available. Please install mlx-whisper: "
-                "pip install mlx-whisper"
-            )
-        
-        # Check if running on Apple Silicon
-        import platform
-        if platform.machine() not in ["arm64", "aarch64"]:
-            warnings.warn(
-                "MLX backend is optimized for Apple Silicon. "
-                "Performance may be suboptimal on other platforms."
-            )
-        
-        # For MLX backend, we need to handle model paths differently
-        # MLX expects either a local path or HuggingFace repo ID
-        if "/" not in whisper_arch and not os.path.exists(whisper_arch):
-            # Convert model size to HF repo format
-            model_map = {
-                "tiny": "mlx-community/whisper-tiny",
-                "tiny.en": "mlx-community/whisper-tiny.en",
-                "base": "mlx-community/whisper-base", 
-                "base.en": "mlx-community/whisper-base.en",
-                "small": "mlx-community/whisper-small",
-                "small.en": "mlx-community/whisper-small.en",
-                "medium": "mlx-community/whisper-medium",
-                "medium.en": "mlx-community/whisper-medium.en",
-                "large": "mlx-community/whisper-large",
-                "large-v2": "mlx-community/whisper-large-v2",
-                "large-v3": "mlx-community/whisper-large-v3",
-            }
-            
-            if whisper_arch in model_map:
-                mlx_model_path = model_map[whisper_arch]
-            else:
-                # Try to use the model name as-is
-                mlx_model_path = whisper_arch
-        else:
-            mlx_model_path = whisper_arch
-        
-        return MlxWhisperBackend(
-            model=mlx_model_path,
-            device="mlx",  # MLX always uses Apple Silicon
-            device_index=device_index,
-            compute_type=compute_type,
-            download_root=download_root,
-            local_files_only=local_files_only,
-            threads=threads,
-            asr_options=asr_options,
-            vad_method=vad_method,
-            vad_options=vad_options,
-            language=language,
-            task=task,
+            batch_size=batch_size,
+            **kwargs
         )
     else:
-        raise ValueError(f"Unknown backend: {backend}")
-
-
-# For backwards compatibility, keep the original imports
-# These are used by alignment.py and other modules
-from whisperx.backends.faster_whisper import (
-    WhisperModel,
-    FasterWhisperPipeline,
-    find_numeral_symbol_tokens
-)
+        # Standard MLX backend
+        from whisperx.backends.mlx_whisper import MlxWhisperBackend
+        mlx_backend = MlxWhisperBackend(
+            model=whisper_arch,
+            device="mlx",
+            device_index=device_index,
+            compute_type=compute_type,
+            download_root=download_root,
+            local_files_only=local_files_only,
+            threads=threads,
+            asr_options=asr_options,
+            vad_method=vad_method,
+            vad_options=vad_options,
+            language=language,
+            task=task,
+            batch_size=batch_size,
+            **kwargs
+        )
+    
+    # Initialize VAD if needed
+    vad_model = None
+    if vad_method and vad_method != "none":
+        default_vad_options = {
+            "chunk_size": 30,
+            "vad_onset": 0.500,
+            "vad_offset": 0.363
+        }
+        
+        if vad_options is not None:
+            default_vad_options.update(vad_options)
+        
+        if vad_method == "silero":
+            vad_model = Silero(**default_vad_options)
+        elif vad_method == "pyannote":
+            # VAD runs on CPU for now
+            vad_device = torch.device("cpu")
+            # Remove device from options if it exists to avoid duplicate argument
+            pyannote_options = default_vad_options.copy()
+            pyannote_options.pop('device', None)
+            vad_model = Pyannote(vad_device, use_auth_token=None, **pyannote_options)
+    
+    # Return pipeline with VAD
+    return MLXWhisperPipeline(backend=mlx_backend, vad_model=vad_model)
