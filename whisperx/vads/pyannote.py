@@ -32,7 +32,7 @@ from whisperx.diarize import Segment as SegmentX
 from whisperx.vads.vad import Vad
 
 
-def load_vad_model(device, vad_onset=0.500, vad_offset=0.363, use_auth_token=None, model_fp=None):
+def load_vad_model(device, vad_onset=0.500, vad_offset=0.363, use_auth_token=None, model_fp=None, **kwargs):
     model_dir = torch.hub._get_torch_home()
 
     main_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -250,8 +250,10 @@ class Pyannote(Vad):
 
     def __init__(self, device, use_auth_token=None, model_fp=None, **kwargs):
         print(">>Performing voice activity detection using Pyannote...")
-        super().__init__(kwargs['vad_onset'])
-        self.vad_pipeline = load_vad_model(device, use_auth_token=use_auth_token, model_fp=model_fp)
+        # Get vad_onset from kwargs with default
+        vad_onset = kwargs.get('vad_onset', 0.500)
+        super().__init__(vad_onset)
+        self.vad_pipeline = load_vad_model(device, use_auth_token=use_auth_token, model_fp=model_fp, **kwargs)
 
     def __call__(self, audio: AudioFile, **kwargs):
         return self.vad_pipeline(audio)
