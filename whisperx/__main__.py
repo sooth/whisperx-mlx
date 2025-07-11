@@ -1,6 +1,12 @@
 import argparse
 import importlib.metadata
 import platform
+import os
+
+# Set threading limits before importing torch to prevent segfaults with MLX
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import torch
 
