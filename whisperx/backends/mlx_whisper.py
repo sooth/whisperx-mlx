@@ -3,6 +3,11 @@ from typing import List, Optional, Union
 from dataclasses import replace
 import warnings
 
+# Set threading limits before importing numpy/torch to prevent segfaults
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
 import numpy as np
 import torch
 import mlx.core as mx

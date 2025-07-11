@@ -1,7 +1,7 @@
 [project]
 urls = { repository = "https://github.com/sooth/whisperx-mlx" }
 authors = [{ name = "Max Bain" }, { name = "MLX Contributors" }]
-name = "whisperx-mlx"
+name = "whisperx"
 version = "3.4.2"
 description = "Time-Accurate Automatic Speech Recognition using Whisper with MLX backend support."
 readme = "README.md"
@@ -20,8 +20,6 @@ dependencies = [
     "torch>=2.5.1",
     "torchaudio>=2.5.1",
     "transformers>=4.48.0",
-    "mlx>=0.8.0",
-    "mlx-whisper>=0.3.0",
 ]
 
 
@@ -29,7 +27,8 @@ dependencies = [
 whisperx = "whisperx.__main__:cli"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
