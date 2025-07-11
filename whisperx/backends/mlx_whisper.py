@@ -88,7 +88,8 @@ class MlxWhisperBackend(WhisperBackend):
         if asr_options is not None:
             self.default_asr_options.update(asr_options)
         
-        # Setup VAD
+        # Store VAD parameters but don't initialize VAD here
+        # VAD will be initialized by the pipeline in asr.py
         default_vad_options = {
             "chunk_size": 30,
             "vad_onset": 0.500,
@@ -99,19 +100,7 @@ class MlxWhisperBackend(WhisperBackend):
             default_vad_options.update(vad_options)
             
         self.vad_params = default_vad_options
-        
-        # Initialize VAD model
-        if vad_method == "silero":
-            self.vad_model = Silero(**default_vad_options)
-        elif vad_method == "pyannote":
-            # VAD runs on CPU for now
-            vad_device = torch.device("cpu")
-            # Remove device from options if it exists to avoid duplicate argument
-            pyannote_options = default_vad_options.copy()
-            pyannote_options.pop('device', None)
-            self.vad_model = Pyannote(vad_device, use_auth_token=None, **pyannote_options)
-        else:
-            raise ValueError(f"Invalid vad_method: {vad_method}")
+        self.vad_model = None  # VAD is handled by the pipeline
     
     def _lazy_init(self):
         """Lazy initialization of the MLX model."""
@@ -131,28 +120,16 @@ class MlxWhisperBackend(WhisperBackend):
         verbose: bool = False,
         **kwargs
     ) -> TranscriptionResult:
-        """Transcribe audio using MLX Whisper backend."""
+        """Transcribe audio using MLX Whisper backend.
+        
+        This method transcribes raw audio without VAD segmentation.
+        VAD segmentation should be handled by the pipeline if needed.
+        """
         self._lazy_init()
         
         # Load audio if path is provided
         if isinstance(audio, str):
             audio = load_audio(audio)
-        
-        # Pre-process audio and merge chunks using VAD
-        if issubclass(type(self.vad_model), Vad):
-            waveform = self.vad_model.preprocess_audio(audio)
-            merge_chunks = self.vad_model.merge_chunks
-        else:
-            waveform = Pyannote.preprocess_audio(audio)
-            merge_chunks = Pyannote.merge_chunks
-        
-        vad_segments = self.vad_model({"waveform": waveform, "sample_rate": SAMPLE_RATE})
-        vad_segments = merge_chunks(
-            vad_segments,
-            chunk_size or self.vad_params["chunk_size"],
-            onset=self.vad_params["vad_onset"],
-            offset=self.vad_params["vad_offset"],
-        )
         
         # Update language and task if provided
         if language is not None:
@@ -165,77 +142,51 @@ class MlxWhisperBackend(WhisperBackend):
         elif self.task is not None:
             self.default_asr_options["task"] = self.task
         
-        segments: List[SingleSegment] = []
-        total_segments = len(vad_segments)
+        # Prepare transcription options
+        transcribe_options = self.default_asr_options.copy()
+        transcribe_options.update(kwargs)
         
-        # Process each VAD segment
-        for idx, vad_segment in enumerate(vad_segments):
-            if print_progress:
-                base_progress = ((idx + 1) / total_segments) * 100
-                percent_complete = base_progress / 2 if combined_progress else base_progress
-                print(f"Progress: {percent_complete:.2f}%...")
-            
-            # Extract audio segment
-            f1 = int(vad_segment['start'] * SAMPLE_RATE)
-            f2 = int(vad_segment['end'] * SAMPLE_RATE)
-            audio_segment = audio[f1:f2]
-            
-            # Transcribe using MLX
-            transcribe_options = self.default_asr_options.copy()
-            transcribe_options.update(kwargs)
-            
-            # Remove verbose from options if it exists, pass it separately
-            transcribe_options.pop('verbose', None)
-            
-            # Convert 'temperatures' to 'temperature' (MLX expects singular)
-            if 'temperatures' in transcribe_options:
-                temps = transcribe_options.pop('temperatures')
-                if isinstance(temps, (list, tuple)) and len(temps) > 0:
-                    transcribe_options['temperature'] = temps[0]
-                else:
-                    transcribe_options['temperature'] = temps
-                    
-            # Convert log_prob_threshold to logprob_threshold (MLX uses no underscore)
-            if 'log_prob_threshold' in transcribe_options:
-                transcribe_options['logprob_threshold'] = transcribe_options.pop('log_prob_threshold')
-                    
-            # MLX doesn't support beam search yet, so remove beam_size when temperature is 0
-            if transcribe_options.get('temperature', 0.0) == 0.0:
-                transcribe_options.pop('beam_size', None)
-                transcribe_options.pop('patience', None)
-                transcribe_options.pop('best_of', None)
+        # Remove verbose from options if it exists, pass it separately
+        transcribe_options.pop('verbose', None)
+        
+        # Convert 'temperatures' to 'temperature' (MLX expects singular)
+        if 'temperatures' in transcribe_options:
+            temps = transcribe_options.pop('temperatures')
+            if isinstance(temps, (list, tuple)) and len(temps) > 0:
+                transcribe_options['temperature'] = temps[0]
+            else:
+                transcribe_options['temperature'] = temps
                 
-            # Remove unsupported options
-            for unsupported in ['suppress_numerals', 'max_new_tokens', 'clip_timestamps', 
-                              'repetition_penalty', 'no_repeat_ngram_size', 
-                              'prompt_reset_on_temperature', 'prefix', 'suppress_blank',
-                              'suppress_tokens', 'without_timestamps', 'max_initial_timestamp',
-                              'multilingual', 'hotwords', 'batch_size', 'num_workers',
-                              'vad_segments', 'combined_progress', 'chunk_size', 'print_progress']:
-                transcribe_options.pop(unsupported, None)
+        # Convert log_prob_threshold to logprob_threshold (MLX uses no underscore)
+        if 'log_prob_threshold' in transcribe_options:
+            transcribe_options['logprob_threshold'] = transcribe_options.pop('log_prob_threshold')
+                
+        # MLX doesn't support beam search yet, so remove beam_size when temperature is 0
+        if transcribe_options.get('temperature', 0.0) == 0.0:
+            transcribe_options.pop('beam_size', None)
+            transcribe_options.pop('patience', None)
+            transcribe_options.pop('best_of', None)
             
-            result = mlx_whisper.transcribe(
-                audio_segment,
-                path_or_hf_repo=self.model_path,
-                verbose=verbose,
-                **transcribe_options
-            )
-            
-            # Extract text from result
-            text = result.get("text", "").strip()
-            
-            if verbose:
-                print(f"Transcript: [{round(vad_segment['start'], 3)} --> {round(vad_segment['end'], 3)}] {text}")
-            
-            # Add segment with proper timestamps
-            segments.append({
-                "text": text,
-                "start": round(vad_segment['start'], 3),
-                "end": round(vad_segment['end'], 3)
-            })
+        # Remove unsupported options
+        for unsupported in ['suppress_numerals', 'max_new_tokens', 'clip_timestamps', 
+                          'repetition_penalty', 'no_repeat_ngram_size', 
+                          'prompt_reset_on_temperature', 'prefix', 'suppress_blank',
+                          'suppress_tokens', 'without_timestamps', 'max_initial_timestamp',
+                          'multilingual', 'hotwords', 'batch_size', 'num_workers',
+                          'vad_segments', 'combined_progress', 'chunk_size', 'print_progress']:
+            transcribe_options.pop(unsupported, None)
         
-        # Get language from transcription result if not already set
-        detected_language = self.default_asr_options.get("language", "en")
+        # Transcribe the entire audio
+        result = mlx_whisper.transcribe(
+            audio,
+            path_or_hf_repo=self.model_path,
+            verbose=verbose,
+            **transcribe_options
+        )
+        
+        # Extract segments and language
+        segments = result.get("segments", [])
+        detected_language = result.get("language", self.default_asr_options.get("language", "en"))
         
         return {"segments": segments, "language": detected_language}
     
