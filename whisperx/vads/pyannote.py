@@ -7,20 +7,23 @@ import torch
 
 # Handle PyTorch 2.6+ weights_only requirement
 if hasattr(torch.serialization, 'add_safe_globals'):
+    import collections
+    safe_globals = [collections.OrderedDict]
+    
     try:
         import omegaconf.listconfig
         import omegaconf.dictconfig
-        torch.serialization.add_safe_globals([
+        import omegaconf.base
+        safe_globals.extend([
             omegaconf.listconfig.ListConfig,
             omegaconf.dictconfig.DictConfig,
-            'collections.OrderedDict'
+            omegaconf.base.ContainerMetadata,
         ])
     except ImportError:
-        torch.serialization.add_safe_globals([
-            'omegaconf.listconfig.ListConfig',
-            'omegaconf.dictconfig.DictConfig',
-            'collections.OrderedDict'
-        ])
+        pass
+    
+    # Add all safe globals
+    torch.serialization.add_safe_globals(safe_globals)
 from pyannote.audio import Model
 from pyannote.audio.core.io import AudioFile
 from pyannote.audio.pipelines import VoiceActivityDetection
@@ -54,7 +57,19 @@ def load_vad_model(device, vad_onset=0.500, vad_offset=0.363, use_auth_token=Non
 
     model_bytes = open(model_fp, "rb").read()
 
-    vad_model = Model.from_pretrained(model_fp, use_auth_token=use_auth_token)
+    # PyTorch 2.6+ requires weights_only=False for complex models
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        # Temporarily set weights_only=False for loading PyAnnote model
+        old_weights_only = torch.load.__kwdefaults__.get('weights_only', True) if hasattr(torch.load, '__kwdefaults__') else None
+        if hasattr(torch.load, '__kwdefaults__'):
+            torch.load.__kwdefaults__['weights_only'] = False
+        try:
+            vad_model = Model.from_pretrained(model_fp, use_auth_token=use_auth_token)
+        finally:
+            if hasattr(torch.load, '__kwdefaults__') and old_weights_only is not None:
+                torch.load.__kwdefaults__['weights_only'] = old_weights_only
     hyperparameters = {"onset": vad_onset,
                     "offset": vad_offset,
                     "min_duration_on": 0.1,
