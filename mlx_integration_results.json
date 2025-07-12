@@ -1,0 +1,32 @@
+{
+  "basic_mlx_no_vad": {
+    "success": true,
+    "time": 0.5738790035247803,
+    "words": 140,
+    "rtf": 104.5516557174568
+  },
+  "mlx_with_vad": {
+    "success": true,
+    "time": 3.555791139602661,
+    "segments": 17,
+    "words": 176,
+    "rtf": 16.873881970104872
+  },
+  "mlx_faux_batch": {
+    "success": true,
+    "time": 3.457970142364502,
+    "segments": 17,
+    "words": 176,
+    "rtf": 17.351219799420537
+  },
+  "batch_optimized": {
+    "success": false,
+    "error": "'list' object has no attribute 'get'"
+  },
+  "quantized": {
+    "success": true,
+    "time": 3.6148407459259033,
+    "words": 173,
+    "rtf": 16.598241587163375
+  }
+}

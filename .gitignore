@@ -169,3 +169,25 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Audio files
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+*.ogg
+
+# Model files
+mlx_models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# OS files
+.DS_Store
+
+# Test files
+test_*.py
+!tests/test_*.py

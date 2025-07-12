@@ -1,0 +1,40 @@
+[
+  {
+    "test": "Direct MLX",
+    "success": true,
+    "time": 0.32209086418151855
+  },
+  {
+    "test": "Basic MLX (tiny, no batch)",
+    "success": true,
+    "load_time": 3.8006279468536377,
+    "transcribe_time": 0.03348207473754883,
+    "total_time": 3.8341100215911865,
+    "segments": 0
+  },
+  {
+    "test": "MLX with faux-batching (tiny, batch=8)",
+    "success": true,
+    "load_time": 0.07913780212402344,
+    "transcribe_time": 0.02724933624267578,
+    "total_time": 0.10638713836669922,
+    "segments": 0
+  },
+  {
+    "test": "MLX batch-optimized backend",
+    "success": false,
+    "error": "OptimizedBatchMLXWhisperBackend.transcribe_batch() got multiple values for argument 'language'"
+  },
+  {
+    "test": "MLX quantized (tiny-q4)",
+    "success": true,
+    "load_time": 0.0374300479888916,
+    "transcribe_time": 0.028114795684814453,
+    "total_time": 0.06554484367370605,
+    "segments": 0
+  },
+  {
+    "test": "VAD + MLX",
+    "success": true
+  }
+]

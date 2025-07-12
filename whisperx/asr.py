@@ -62,8 +62,13 @@ class MLXWhisperPipeline:
         # Process segments
         if hasattr(self.backend, 'transcribe_batch') and batch_size > 1:
             # Use batch processing if available
+            # Add audio to each segment for batch processing
+            for segment in segments:
+                start_sample = int(segment['start'] * SAMPLE_RATE)
+                end_sample = int(segment['end'] * SAMPLE_RATE)
+                segment['audio'] = audio[start_sample:end_sample]
+            
             return self.backend.transcribe_batch(
-                audio,
                 segments,
                 batch_size=batch_size,
                 print_progress=print_progress,
@@ -183,21 +188,15 @@ def load_model(
     
     # Load the appropriate MLX backend
     if backend in ["batch", "mlx_batch"]:
-        from whisperx.backends.mlx_batch_optimized import MlxBatchOptimizedBackend
-        mlx_backend = MlxBatchOptimizedBackend(
-            model=whisper_arch,
-            device="mlx",
-            device_index=device_index,
-            compute_type=compute_type,
-            download_root=download_root,
-            local_files_only=local_files_only,
-            threads=threads,
-            asr_options=asr_options,
-            vad_method=vad_method,
-            vad_options=vad_options,
-            language=language,
-            task=task,
+        from whisperx.backends.mlx_batch_optimized import OptimizedBatchMLXWhisperBackend
+        mlx_backend = OptimizedBatchMLXWhisperBackend(
+            model_name=whisper_arch,
             batch_size=batch_size,
+            device="mlx",
+            compute_type=compute_type,
+            asr_options=asr_options,
+            quantization=None,
+            model_path=None,
             **kwargs
         )
     else:
