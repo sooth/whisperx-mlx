@@ -3,10 +3,8 @@ from typing import List, Optional, Union
 from dataclasses import replace
 import warnings
 
-# Set threading limits before importing numpy/torch to prevent segfaults
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
+# Threading limits are already set in __main__.py or by the user
+# Don't override them here as it may cause conflicts
 
 import numpy as np
 import torch
@@ -66,10 +64,10 @@ class MlxWhisperBackend(WhisperBackend):
         # Convert compute_type to MLX dtype
         self.mlx_dtype = mx.float16 if compute_type == "float16" else mx.float32
         
-        # Load model immediately instead of lazy loading to avoid issues
-        from mlx_whisper.load_models import load_model
-        self.model = load_model(self.model_path, dtype=self.mlx_dtype)
-        self._model_loaded = True
+        # Don't load model here - mlx_whisper.transcribe loads its own model
+        # Model loading was causing hanging issues
+        self.model = None
+        self._model_loaded = False
         
         # Setup ASR options - separate transcribe options from decoding options
         self.default_asr_options = {
@@ -80,7 +78,7 @@ class MlxWhisperBackend(WhisperBackend):
             "no_speech_threshold": 0.6,
             "condition_on_previous_text": False,
             "initial_prompt": None,
-            "word_timestamps": True,
+            "word_timestamps": False,  # Disabled by default due to performance issues
             "prepend_punctuations": "\"'\u2018\u00BF([{-",
             "append_punctuations": "\"'.。,，!！?？:：\")]}、",
             "hallucination_silence_threshold": None,
@@ -92,6 +90,13 @@ class MlxWhisperBackend(WhisperBackend):
         
         if asr_options is not None:
             self.default_asr_options.update(asr_options)
+            # Warn if word_timestamps is enabled
+            if asr_options.get("word_timestamps", False):
+                warnings.warn(
+                    "word_timestamps=True may cause performance issues with MLX backend. "
+                    "Consider using word_timestamps=False for better performance.",
+                    UserWarning
+                )
         
         # Store VAD parameters but don't initialize VAD here
         # VAD will be initialized by the pipeline in asr.py
