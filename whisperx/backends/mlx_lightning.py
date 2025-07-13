@@ -45,7 +45,20 @@ class WhisperMLXLightning(WhisperBackend):
             dtype = mx.float16 if compute_type == "float16" else mx.float32
             # Convert model name to MLX format if needed
             if not model_name.startswith("mlx-community/"):
-                model_name = f"mlx-community/whisper-{model_name}-mlx"
+                # Handle distil models
+                if "distil" in model_name:
+                    if model_name.startswith("distil-whisper-"):
+                        # Format: distil-whisper-large-v3 -> mlx-community/distil-whisper-large-v3
+                        model_name = f"mlx-community/{model_name}"
+                    elif model_name.startswith("distil-"):
+                        # Format: distil-large-v3 -> mlx-community/distil-whisper-large-v3
+                        model_name = f"mlx-community/distil-whisper-{model_name[7:]}"
+                    else:
+                        # Format: large-v3-distil -> mlx-community/distil-whisper-large-v3
+                        model_name = f"mlx-community/distil-whisper-{model_name}"
+                else:
+                    # Regular whisper models
+                    model_name = f"mlx-community/whisper-{model_name}-mlx"
             _model_cache[cache_key] = load_model(model_name, dtype=dtype)
         self.model = _model_cache[cache_key]
         

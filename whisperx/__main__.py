@@ -18,7 +18,7 @@ def cli():
     # fmt: off
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("audio", nargs="+", type=str, help="audio file(s) to transcribe")
-    parser.add_argument("--model", default="small", help="name of the Whisper model to use")
+    parser.add_argument("--model", default="small", help="name of the Whisper model to use (e.g., tiny, small, medium, large-v3, distil-large-v3)")
     parser.add_argument("--backend", default="auto", choices=["auto", "mlx", "standard", "batch", "lightning", "mlx_lightning"], help="backend to use for transcription (MLX-only fork, always uses MLX)")
     parser.add_argument("--model_cache_only", type=str2bool, default=False, help="If True, will not attempt to download models, instead using cached models from --model_dir")
     parser.add_argument("--model_dir", type=str, default=None, help="the path to save model files; uses ~/.cache/whisper by default")
