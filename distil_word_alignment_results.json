@@ -1,0 +1,118 @@
+[
+  {
+    "model": "large-v3",
+    "word_count": 276,
+    "words_with_timestamps": 276,
+    "coverage": 100.0,
+    "sample_words": [
+      {
+        "word": "That's",
+        "start": 0.97596875,
+        "end": 1.15596875
+      },
+      {
+        "word": "why",
+        "start": 1.17596875,
+        "end": 1.27696875
+      },
+      {
+        "word": "he's",
+        "start": 1.33696875,
+        "end": 1.4369687500000001
+      },
+      {
+        "word": "so",
+        "start": 1.4769687500000002,
+        "end": 1.59696875
+      },
+      {
+        "word": "fucking",
+        "start": 1.63696875,
+        "end": 1.93796875
+      },
+      {
+        "word": "famous,",
+        "start": 1.97796875,
+        "end": 2.25796875
+      },
+      {
+        "word": "bro.",
+        "start": 2.29796875,
+        "end": 2.53896875
+      },
+      {
+        "word": "That's",
+        "start": 3.68096875,
+        "end": 3.8209687500000005
+      },
+      {
+        "word": "why",
+        "start": 3.8609687499999996,
+        "end": 3.9409687499999997
+      },
+      {
+        "word": "Gordon",
+        "start": 4.04096875,
+        "end": 4.24196875
+      }
+    ]
+  },
+  {
+    "model": "distil-large-v3",
+    "word_count": 285,
+    "words_with_timestamps": 285,
+    "coverage": 100.0,
+    "sample_words": [
+      {
+        "word": "That's",
+        "start": 0.97596875,
+        "end": 1.15596875
+      },
+      {
+        "word": "why",
+        "start": 1.17596875,
+        "end": 1.27696875
+      },
+      {
+        "word": "he's",
+        "start": 1.33696875,
+        "end": 1.4369687500000001
+      },
+      {
+        "word": "so",
+        "start": 1.4769687500000002,
+        "end": 1.59696875
+      },
+      {
+        "word": "fucking",
+        "start": 1.63696875,
+        "end": 1.93796875
+      },
+      {
+        "word": "famous,",
+        "start": 1.97796875,
+        "end": 2.25796875
+      },
+      {
+        "word": "bro.",
+        "start": 2.29796875,
+        "end": 2.53896875
+      },
+      {
+        "word": "That's",
+        "start": 3.68096875,
+        "end": 3.8209687500000005
+      },
+      {
+        "word": "why",
+        "start": 3.8609687499999996,
+        "end": 3.9409687499999997
+      },
+      {
+        "word": "Gordon",
+        "start": 4.04096875,
+        "end": 4.24196875
+      }
+    ]
+  }
+]

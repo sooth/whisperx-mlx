@@ -1,0 +1,78 @@
+{
+  "speed_benchmarks": [
+    {
+      "name": "PyAnnote",
+      "vad_time": 4.949743747711182,
+      "audio_duration": 90.16775,
+      "realtime_factor": 18.21665011278505,
+      "memory_used_mb": 815.1875,
+      "num_segments": 5344,
+      "segments": "<pyannote.core.feature.SlidingWindowFeature object at 0x3433de250>"
+    },
+    {
+      "name": "Silero",
+      "vad_time": 0.2837038040161133,
+      "audio_duration": 90.16775,
+      "realtime_factor": 317.8235495033363,
+      "memory_used_mb": 4.09375,
+      "num_segments": 21,
+      "segments": [
+        "<whisperx.diarize.Segment object at 0x342575350>",
+        "<whisperx.diarize.Segment object at 0x3425ca350>",
+        "<whisperx.diarize.Segment object at 0x341764190>",
+        "<whisperx.diarize.Segment object at 0x342e7c490>",
+        "<whisperx.diarize.Segment object at 0x342e7ec10>",
+        "<whisperx.diarize.Segment object at 0x3427da350>",
+        "<whisperx.diarize.Segment object at 0x3427da0d0>",
+        "<whisperx.diarize.Segment object at 0x342e60d50>",
+        "<whisperx.diarize.Segment object at 0x342f4a5d0>",
+        "<whisperx.diarize.Segment object at 0x33f907f50>",
+        "<whisperx.diarize.Segment object at 0x342f32d50>",
+        "<whisperx.diarize.Segment object at 0x342f32d90>",
+        "<whisperx.diarize.Segment object at 0x342f33b90>",
+        "<whisperx.diarize.Segment object at 0x342f319d0>",
+        "<whisperx.diarize.Segment object at 0x342f30dd0>",
+        "<whisperx.diarize.Segment object at 0x342f310d0>",
+        "<whisperx.diarize.Segment object at 0x342f308d0>",
+        "<whisperx.diarize.Segment object at 0x342f30110>",
+        "<whisperx.diarize.Segment object at 0x342f32b90>",
+        "<whisperx.diarize.Segment object at 0x342f30b90>",
+        "<whisperx.diarize.Segment object at 0x342f33110>"
+      ]
+    }
+  ],
+  "accuracy_comparisons": [
+    {
+      "comparison": "PyAnnote_vs_Silero",
+      "total_speech_1": 0,
+      "total_speech_2": 78.18175000000001,
+      "overlap": 0,
+      "precision": 0,
+      "recall": 0.0,
+      "f1_score": 0
+    }
+  ],
+  "transcription_tests": [
+    {
+      "vad_name": "PyAnnote",
+      "total_time": 6.371624946594238,
+      "num_segments": 4,
+      "num_words": 352,
+      "text_preview": "That's why he's so fucking famous bro. That's why Gordon Ramsay's so famous. Oh, everyone. Because h..."
+    },
+    {
+      "vad_name": "Silero",
+      "total_time": 1.1246907711029053,
+      "num_segments": 4,
+      "num_words": 270,
+      "text_preview": "That's why he's so fucking famous bro. That's why Gordon Ramsay's so famous. Oh, everyone. Because h..."
+    },
+    {
+      "vad_name": "None",
+      "total_time": 0.8216311931610107,
+      "num_segments": 4,
+      "num_words": 293,
+      "text_preview": "that's why he's so fucking famous bro that's why Gordon Ramsay's so famous because he's only one ove..."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "stock_with_vad": {
+    "time": 7.91388201713562,
+    "word_count": 77,
+    "first_10_words": [
+      "I'm",
+      "leaving",
+      "on",
+      "the",
+      "floor",
+      "now",
+      "my",
+      "jury",
+      "box",
+      "froze"
+    ]
+  },
+  "lightning_no_vad": {
+    "time": 0.9587688446044922,
+    "word_count": 20,
+    "first_10_words": [
+      "What",
+      "is",
+      "up",
+      "guys",
+      "it's",
+      "Andy",
+      "Priscilla",
+      "and",
+      "this",
+      "is"
+    ]
+  },
+  "lightning_fast": {
+    "time": 2.0804030895233154,
+    "segment_count": 1,
+    "sample_text": "I'm leaving on the floor now my jury box froze fuck up Bo, fuck up, stoke count it millions in a cod"
+  }
+}

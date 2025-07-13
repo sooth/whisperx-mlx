@@ -56,6 +56,17 @@ class WhisperMLXLightning(WhisperBackend):
                     else:
                         # Format: large-v3-distil -> mlx-community/distil-whisper-large-v3
                         model_name = f"mlx-community/distil-whisper-{model_name}"
+                # Handle turbo models
+                elif "turbo" in model_name.lower():
+                    if model_name.lower() == "turbo":
+                        # Alias: turbo -> whisper-large-v3-turbo
+                        model_name = "mlx-community/whisper-large-v3-turbo"
+                    elif model_name == "large-v3-turbo":
+                        # Format: large-v3-turbo -> mlx-community/whisper-large-v3-turbo
+                        model_name = "mlx-community/whisper-large-v3-turbo"
+                    else:
+                        # Other turbo variants
+                        model_name = f"mlx-community/whisper-{model_name}"
                 else:
                     # Regular whisper models
                     model_name = f"mlx-community/whisper-{model_name}-mlx"

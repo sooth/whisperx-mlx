@@ -1,0 +1,82 @@
+[
+  {
+    "model": "large-v3",
+    "load_time": 5.029644250869751,
+    "results": [
+      {
+        "audio_file": "short.wav",
+        "duration": 90.16775,
+        "transcribe_time": 10.62715220451355,
+        "realtime_factor": 8.484657814696968,
+        "word_time": null,
+        "word_realtime_factor": null,
+        "num_words": 276,
+        "num_segments": 4,
+        "text_preview": "That's why he's so fucking famous, bro. That's why..."
+      }
+    ],
+    "description": "Regular Whisper Large v3",
+    "word_results": [
+      {
+        "audio_file": "short.wav",
+        "duration": 90.16775,
+        "transcribe_time": 10.516146898269653,
+        "realtime_factor": 8.574219328833868,
+        "word_time": 12.405716180801392,
+        "word_realtime_factor": 7.268242210759274,
+        "num_words": 276,
+        "num_segments": 4,
+        "text_preview": "That's why he's so fucking famous, bro. That's why..."
+      }
+    ]
+  },
+  {
+    "model": "distil-large-v3",
+    "load_time": 0.43497705459594727,
+    "results": [
+      {
+        "audio_file": "short.wav",
+        "duration": 90.16775,
+        "transcribe_time": 6.622238397598267,
+        "realtime_factor": 13.615902144613484,
+        "word_time": null,
+        "word_realtime_factor": null,
+        "num_words": 286,
+        "num_segments": 4,
+        "text_preview": "That's why he's so fucking famous, bro. That's why..."
+      }
+    ],
+    "description": "Distil-Whisper Large v3",
+    "word_results": [
+      {
+        "audio_file": "short.wav",
+        "duration": 90.16775,
+        "transcribe_time": 7.020326137542725,
+        "realtime_factor": 12.84381212972547,
+        "word_time": 8.809460878372192,
+        "word_realtime_factor": 10.235331224566508,
+        "num_words": 286,
+        "num_segments": 4,
+        "text_preview": "That's why he's so fucking famous, bro. That's why..."
+      }
+    ]
+  },
+  {
+    "model": "distil-whisper-large-v3",
+    "load_time": 0.3256549835205078,
+    "results": [
+      {
+        "audio_file": "short.wav",
+        "duration": 90.16775,
+        "transcribe_time": 7.050270080566406,
+        "realtime_factor": 12.789261825379047,
+        "word_time": null,
+        "word_realtime_factor": null,
+        "num_words": 285,
+        "num_segments": 4,
+        "text_preview": "That's why he's so fucking famous, bro. That's why..."
+      }
+    ],
+    "description": "Distil-Whisper Large v3 (alt name)"
+  }
+]

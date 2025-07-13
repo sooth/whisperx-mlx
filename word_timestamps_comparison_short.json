@@ -1,0 +1,924 @@
+{
+  "audio_file": "short.wav",
+  "model_size": "tiny",
+  "stock": {
+    "time": 8.443639993667603,
+    "words": [
+      {
+        "word": "I'm",
+        "start": 3.338,
+        "end": 3.399
+      },
+      {
+        "word": "leaving",
+        "start": 3.419,
+        "end": 3.663
+      },
+      {
+        "word": "on",
+        "start": 3.865,
+        "end": 4.027
+      },
+      {
+        "word": "the",
+        "start": 4.047,
+        "end": 4.108
+      },
+      {
+        "word": "floor",
+        "start": 4.189,
+        "end": 4.493
+      },
+      {
+        "word": "now",
+        "start": 4.655,
+        "end": 4.797
+      },
+      {
+        "word": "my",
+        "start": 4.817,
+        "end": 4.938
+      },
+      {
+        "word": "jury",
+        "start": 5.019,
+        "end": 5.384
+      },
+      {
+        "word": "box",
+        "start": 5.485,
+        "end": 5.769
+      },
+      {
+        "word": "froze",
+        "start": 5.992,
+        "end": 6.255
+      },
+      {
+        "word": "fuck",
+        "start": 6.417,
+        "end": 6.498
+      },
+      {
+        "word": "up",
+        "start": 6.518,
+        "end": 6.559
+      },
+      {
+        "word": "Bo,",
+        "start": 6.538,
+        "end": 7.004
+      },
+      {
+        "word": "fuck",
+        "start": 7.125,
+        "end": 7.348
+      },
+      {
+        "word": "up,",
+        "start": 7.368,
+        "end": 7.49
+      },
+      {
+        "word": "stoke",
+        "start": 7.51,
+        "end": 7.854
+      },
+      {
+        "word": "count",
+        "start": 7.976,
+        "end": 8.178
+      },
+      {
+        "word": "it",
+        "start": 8.198,
+        "end": 8.3
+      },
+      {
+        "word": "millions",
+        "start": 8.381,
+        "end": 8.745
+      },
+      {
+        "word": "in",
+        "start": 8.907,
+        "end": 8.988
+      },
+      {
+        "word": "a",
+        "start": 9.049,
+        "end": 9.109
+      },
+      {
+        "word": "code",
+        "start": 9.231,
+        "end": 9.534
+      },
+      {
+        "word": "bad",
+        "start": 9.656,
+        "end": 9.899
+      },
+      {
+        "word": "It's",
+        "start": 9.878,
+        "end": 10.343
+      },
+      {
+        "word": "booted",
+        "start": 10.465,
+        "end": 10.99
+      },
+      {
+        "word": "slow",
+        "start": 11.01,
+        "end": 11.172
+      },
+      {
+        "word": "gotta",
+        "start": 11.313,
+        "end": 11.617
+      },
+      {
+        "word": "on",
+        "start": 11.859,
+        "end": 12.021
+      },
+      {
+        "word": "bank",
+        "start": 12.162,
+        "end": 12.445
+      },
+      {
+        "word": "road",
+        "start": 12.688,
+        "end": 12.87
+      },
+      {
+        "word": "can't",
+        "start": 12.971,
+        "end": 13.496
+      },
+      {
+        "word": "vote",
+        "start": 13.517,
+        "end": 13.719
+      },
+      {
+        "word": "Does",
+        "start": 13.698,
+        "end": 13.982
+      },
+      {
+        "word": "it",
+        "start": 14.043,
+        "end": 14.084
+      },
+      {
+        "word": "know",
+        "start": 14.205,
+        "end": 14.388
+      },
+      {
+        "word": "it's",
+        "start": 14.408,
+        "end": 15.198
+      },
+      {
+        "word": "a",
+        "start": 15.219,
+        "end": 15.32
+      },
+      {
+        "word": "case-cloth",
+        "start": 15.482,
+        "end": 16.253
+      },
+      {
+        "word": "code",
+        "start": 16.638,
+        "end": 16.719
+      },
+      {
+        "word": "What",
+        "start": 16.698,
+        "end": 17.184
+      },
+      {
+        "word": "is",
+        "start": 17.244,
+        "end": 17.325
+      },
+      {
+        "word": "up",
+        "start": 17.426,
+        "end": 17.528
+      },
+      {
+        "word": "guys",
+        "start": 17.548,
+        "end": 17.892
+      },
+      {
+        "word": "it's",
+        "start": 17.972,
+        "end": 18.074
+      },
+      {
+        "word": "Andy",
+        "start": 18.094,
+        "end": 18.316
+      },
+      {
+        "word": "Priscilla",
+        "start": 18.357,
+        "end": 18.741
+      },
+      {
+        "word": "and",
+        "start": 18.761,
+        "end": 18.842
+      },
+      {
+        "word": "this",
+        "start": 18.862,
+        "end": 19.004
+      },
+      {
+        "word": "is",
+        "start": 19.085,
+        "end": 19.206
+      },
+      {
+        "word": "the",
+        "start": 19.246,
+        "end": 19.368
+      },
+      {
+        "word": "show",
+        "start": 19.388,
+        "end": 19.61
+      },
+      {
+        "word": "for",
+        "start": 19.651,
+        "end": 19.833
+      },
+      {
+        "word": "the",
+        "start": 19.853,
+        "end": 19.914
+      },
+      {
+        "word": "real",
+        "start": 19.954,
+        "end": 20.177
+      },
+      {
+        "word": "estate",
+        "start": 20.197,
+        "end": 20.359
+      },
+      {
+        "word": "Combined",
+        "start": 20.338,
+        "end": 20.642
+      },
+      {
+        "word": "in",
+        "start": 20.663,
+        "end": 20.703
+      },
+      {
+        "word": "the",
+        "start": 20.744,
+        "end": 20.805
+      },
+      {
+        "word": "lies",
+        "start": 20.865,
+        "end": 21.149
+      },
+      {
+        "word": "to",
+        "start": 21.19,
+        "end": 21.271
+      },
+      {
+        "word": "thickness",
+        "start": 21.311,
+        "end": 21.656
+      },
+      {
+        "word": "and",
+        "start": 21.798,
+        "end": 21.899
+      },
+      {
+        "word": "delusions",
+        "start": 21.96,
+        "end": 22.568
+      },
+      {
+        "word": "of",
+        "start": 22.71,
+        "end": 22.75
+      },
+      {
+        "word": "modern",
+        "start": 22.77,
+        "end": 22.953
+      },
+      {
+        "word": "society",
+        "start": 22.993,
+        "end": 23.399
+      },
+      {
+        "word": "Welcome",
+        "start": 23.378,
+        "end": 23.821
+      },
+      {
+        "word": "motherfucking",
+        "start": 23.861,
+        "end": 24.385
+      },
+      {
+        "word": "reality",
+        "start": 24.425,
+        "end": 24.807
+      },
+      {
+        "word": "guys",
+        "start": 24.848,
+        "end": 25.129
+      },
+      {
+        "word": "today",
+        "start": 25.532,
+        "end": 25.995
+      },
+      {
+        "word": "we",
+        "start": 26.055,
+        "end": 26.639
+      },
+      {
+        "word": "have",
+        "start": 26.719,
+        "end": 27.082
+      },
+      {
+        "word": "Andy",
+        "start": 27.122,
+        "end": 27.887
+      },
+      {
+        "word": "and",
+        "start": 28.309,
+        "end": 28.45
+      },
+      {
+        "word": "DJ",
+        "start": 28.571,
+        "end": 29.175
+      },
+      {
+        "word": "crew",
+        "start": 29.718,
+        "end": 29.799
+      }
+    ],
+    "segments": [
+      {
+        "start": 3.338,
+        "end": 6.559,
+        "text": " I'm leaving on the floor now my jury box froze fuck up",
+        "words": [
+          {
+            "word": "I'm",
+            "start": 3.338,
+            "end": 3.399,
+            "score": 0.0
+          },
+          {
+            "word": "leaving",
+            "start": 3.419,
+            "end": 3.663,
+            "score": 0.71
+          },
+          {
+            "word": "on",
+            "start": 3.865,
+            "end": 4.027,
+            "score": 0.726
+          },
+          {
+            "word": "the",
+            "start": 4.047,
+            "end": 4.108,
+            "score": 0.245
+          },
+          {
+            "word": "floor",
+            "start": 4.189,
+            "end": 4.493,
+            "score": 0.569
+          },
+          {
+            "word": "now",
+            "start": 4.655,
+            "end": 4.797,
+            "score": 0.74
+          },
+          {
+            "word": "my",
+            "start": 4.817,
+            "end": 4.938,
+            "score": 0.824
+          },
+          {
+            "word": "jury",
+            "start": 5.019,
+            "end": 5.384,
+            "score": 0.798
+          },
+          {
+            "word": "box",
+            "start": 5.485,
+            "end": 5.769,
+            "score": 0.744
+          },
+          {
+            "word": "froze",
+            "start": 5.992,
+            "end": 6.255,
+            "score": 0.432
+          },
+          {
+            "word": "fuck",
+            "start": 6.417,
+            "end": 6.498,
+            "score": 0.024
+          },
+          {
+            "word": "up",
+            "start": 6.518,
+            "end": 6.559,
+            "score": 0.128
+          }
+        ]
+      },
+      {
+        "start": 6.538,
+        "end": 9.899,
+        "text": " Bo, fuck up, stoke count it millions in a code bad",
+        "words": [
+          {
+            "word": "Bo,",
+            "start": 6.538,
+            "end": 7.004,
+            "score": 0.696
+          },
+          {
+            "word": "fuck",
+            "start": 7.125,
+            "end": 7.348,
+            "score": 0.49
+          },
+          {
+            "word": "up,",
+            "start": 7.368,
+            "end": 7.49,
+            "score": 0.604
+          },
+          {
+            "word": "stoke",
+            "start": 7.51,
+            "end": 7.854,
+            "score": 0.69
+          },
+          {
+            "word": "count",
+            "start": 7.976,
+            "end": 8.178,
+            "score": 0.804
+          },
+          {
+            "word": "it",
+            "start": 8.198,
+            "end": 8.3,
+            "score": 0.52
+          },
+          {
+            "word": "millions",
+            "start": 8.381,
+            "end": 8.745,
+            "score": 0.604
+          },
+          {
+            "word": "in",
+            "start": 8.907,
+            "end": 8.988,
+            "score": 0.894
+          },
+          {
+            "word": "a",
+            "start": 9.049,
+            "end": 9.109,
+            "score": 0.827
+          },
+          {
+            "word": "code",
+            "start": 9.231,
+            "end": 9.534,
+            "score": 0.56
+          },
+          {
+            "word": "bad",
+            "start": 9.656,
+            "end": 9.899,
+            "score": 0.666
+          }
+        ]
+      },
+      {
+        "start": 9.878,
+        "end": 13.719,
+        "text": " It's booted slow gotta on bank road can't vote",
+        "words": [
+          {
+            "word": "It's",
+            "start": 9.878,
+            "end": 10.343,
+            "score": 0.424
+          },
+          {
+            "word": "booted",
+            "start": 10.465,
+            "end": 10.99,
+            "score": 0.522
+          },
+          {
+            "word": "slow",
+            "start": 11.01,
+            "end": 11.172,
+            "score": 0.476
+          },
+          {
+            "word": "gotta",
+            "start": 11.313,
+            "end": 11.617,
+            "score": 0.645
+          },
+          {
+            "word": "on",
+            "start": 11.859,
+            "end": 12.021,
+            "score": 0.842
+          },
+          {
+            "word": "bank",
+            "start": 12.162,
+            "end": 12.445,
+            "score": 0.906
+          },
+          {
+            "word": "road",
+            "start": 12.688,
+            "end": 12.87,
+            "score": 0.481
+          },
+          {
+            "word": "can't",
+            "start": 12.971,
+            "end": 13.496,
+            "score": 0.529
+          },
+          {
+            "word": "vote",
+            "start": 13.517,
+            "end": 13.719,
+            "score": 0.544
+          }
+        ]
+      },
+      {
+        "start": 13.698,
+        "end": 16.719,
+        "text": " Does it know it's a case-cloth code",
+        "words": [
+          {
+            "word": "Does",
+            "start": 13.698,
+            "end": 13.982,
+            "score": 0.69
+          },
+          {
+            "word": "it",
+            "start": 14.043,
+            "end": 14.084,
+            "score": 0.976
+          },
+          {
+            "word": "know",
+            "start": 14.205,
+            "end": 14.388,
+            "score": 0.957
+          },
+          {
+            "word": "it's",
+            "start": 14.408,
+            "end": 15.198,
+            "score": 0.605
+          },
+          {
+            "word": "a",
+            "start": 15.219,
+            "end": 15.32,
+            "score": 0.665
+          },
+          {
+            "word": "case-cloth",
+            "start": 15.482,
+            "end": 16.253,
+            "score": 0.814
+          },
+          {
+            "word": "code",
+            "start": 16.638,
+            "end": 16.719,
+            "score": 0.25
+          }
+        ]
+      },
+      {
+        "start": 16.698,
+        "end": 20.359,
+        "text": " What is up guys it's Andy Priscilla and this is the show for the real estate",
+        "words": [
+          {
+            "word": "What",
+            "start": 16.698,
+            "end": 17.184,
+            "score": 0.713
+          },
+          {
+            "word": "is",
+            "start": 17.244,
+            "end": 17.325,
+            "score": 0.764
+          },
+          {
+            "word": "up",
+            "start": 17.426,
+            "end": 17.528,
+            "score": 0.912
+          },
+          {
+            "word": "guys",
+            "start": 17.548,
+            "end": 17.892,
+            "score": 0.547
+          },
+          {
+            "word": "it's",
+            "start": 17.972,
+            "end": 18.074,
+            "score": 0.3
+          },
+          {
+            "word": "Andy",
+            "start": 18.094,
+            "end": 18.316,
+            "score": 0.547
+          },
+          {
+            "word": "Priscilla",
+            "start": 18.357,
+            "end": 18.741,
+            "score": 0.565
+          },
+          {
+            "word": "and",
+            "start": 18.761,
+            "end": 18.842,
+            "score": 0.713
+          },
+          {
+            "word": "this",
+            "start": 18.862,
+            "end": 19.004,
+            "score": 0.816
+          },
+          {
+            "word": "is",
+            "start": 19.085,
+            "end": 19.206,
+            "score": 0.894
+          },
+          {
+            "word": "the",
+            "start": 19.246,
+            "end": 19.368,
+            "score": 0.695
+          },
+          {
+            "word": "show",
+            "start": 19.388,
+            "end": 19.61,
+            "score": 0.958
+          },
+          {
+            "word": "for",
+            "start": 19.651,
+            "end": 19.833,
+            "score": 0.477
+          },
+          {
+            "word": "the",
+            "start": 19.853,
+            "end": 19.914,
+            "score": 0.967
+          },
+          {
+            "word": "real",
+            "start": 19.954,
+            "end": 20.177,
+            "score": 0.924
+          },
+          {
+            "word": "estate",
+            "start": 20.197,
+            "end": 20.359,
+            "score": 0.509
+          }
+        ]
+      },
+      {
+        "start": 20.338,
+        "end": 23.399,
+        "text": " Combined in the lies to thickness and delusions of modern society",
+        "words": [
+          {
+            "word": "Combined",
+            "start": 20.338,
+            "end": 20.642,
+            "score": 0.16
+          },
+          {
+            "word": "in",
+            "start": 20.663,
+            "end": 20.703,
+            "score": 0.436
+          },
+          {
+            "word": "the",
+            "start": 20.744,
+            "end": 20.805,
+            "score": 0.942
+          },
+          {
+            "word": "lies",
+            "start": 20.865,
+            "end": 21.149,
+            "score": 0.786
+          },
+          {
+            "word": "to",
+            "start": 21.19,
+            "end": 21.271,
+            "score": 0.565
+          },
+          {
+            "word": "thickness",
+            "start": 21.311,
+            "end": 21.656,
+            "score": 0.751
+          },
+          {
+            "word": "and",
+            "start": 21.798,
+            "end": 21.899,
+            "score": 0.745
+          },
+          {
+            "word": "delusions",
+            "start": 21.96,
+            "end": 22.568,
+            "score": 0.945
+          },
+          {
+            "word": "of",
+            "start": 22.71,
+            "end": 22.75,
+            "score": 0.0
+          },
+          {
+            "word": "modern",
+            "start": 22.77,
+            "end": 22.953,
+            "score": 0.421
+          },
+          {
+            "word": "society",
+            "start": 22.993,
+            "end": 23.399,
+            "score": 0.849
+          }
+        ]
+      },
+      {
+        "start": 23.378,
+        "end": 29.799,
+        "text": " Welcome motherfucking reality guys today we have Andy and DJ crew",
+        "words": [
+          {
+            "word": "Welcome",
+            "start": 23.378,
+            "end": 23.821,
+            "score": 0.858
+          },
+          {
+            "word": "motherfucking",
+            "start": 23.861,
+            "end": 24.385,
+            "score": 0.678
+          },
+          {
+            "word": "reality",
+            "start": 24.425,
+            "end": 24.807,
+            "score": 0.928
+          },
+          {
+            "word": "guys",
+            "start": 24.848,
+            "end": 25.129,
+            "score": 0.734
+          },
+          {
+            "word": "today",
+            "start": 25.532,
+            "end": 25.995,
+            "score": 0.92
+          },
+          {
+            "word": "we",
+            "start": 26.055,
+            "end": 26.639,
+            "score": 0.834
+          },
+          {
+            "word": "have",
+            "start": 26.719,
+            "end": 27.082,
+            "score": 0.73
+          },
+          {
+            "word": "Andy",
+            "start": 27.122,
+            "end": 27.887,
+            "score": 0.877
+          },
+          {
+            "word": "and",
+            "start": 28.309,
+            "end": 28.45,
+            "score": 0.888
+          },
+          {
+            "word": "DJ",
+            "start": 28.571,
+            "end": 29.175,
+            "score": 0.826
+          },
+          {
+            "word": "crew",
+            "start": 29.718,
+            "end": 29.799,
+            "score": 0.243
+          }
+        ]
+      }
+    ]
+  },
+  "lightning": {
+    "time": 2.10610294342041,
+    "words": [],
+    "segments": [
+      {
+        "start": 3.33846875,
+        "end": 29.95846875,
+        "text": "I'm leaving on the floor now my jury box froze fuck up Bo, fuck up, stoke count it millions in a code bag It's booted slow gotta on bank road can't vote Does it know his shot case closed What is up guys it's Andy Priscilla and this is the show for the real estate Combined in the lies to thickness and delusions of modern society Welcome motherfucking reality guys today we have Andy and DJ crew",
+        "id": 0
+      }
+    ]
+  },
+  "comparison": {
+    "speedup": 4.009129762648133,
+    "stock_word_count": 77,
+    "lightning_word_count": 0
+  }
+}

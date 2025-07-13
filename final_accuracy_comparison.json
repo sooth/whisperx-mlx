@@ -1,0 +1,75 @@
+{
+  "test_audio": "short.wav",
+  "duration": 30.0,
+  "stock_whisperx": {
+    "time": 3.13753080368042,
+    "speed": 9.561659112576386,
+    "word_count": 77,
+    "sample_words": [
+      {
+        "word": "I'm",
+        "start": 3.338,
+        "end": 3.399
+      },
+      {
+        "word": "leaving",
+        "start": 3.419,
+        "end": 3.663
+      },
+      {
+        "word": "on",
+        "start": 3.865,
+        "end": 4.027
+      },
+      {
+        "word": "the",
+        "start": 4.047,
+        "end": 4.108
+      },
+      {
+        "word": "floor",
+        "start": 4.189,
+        "end": 4.493
+      }
+    ]
+  },
+  "our_lightning": {
+    "time": 0.792759895324707,
+    "speed": 37.84247938994477,
+    "word_count": 20,
+    "sample_words": [
+      {
+        "word": "What",
+        "start": 0.0,
+        "end": 17.163
+      },
+      {
+        "word": "is",
+        "start": 17.243,
+        "end": 17.323
+      },
+      {
+        "word": "up",
+        "start": 17.423,
+        "end": 17.523
+      },
+      {
+        "word": "guys",
+        "start": 17.563,
+        "end": 17.904
+      },
+      {
+        "word": "it's",
+        "start": 17.964,
+        "end": 18.064
+      }
+    ]
+  },
+  "comparison": {
+    "text_similarity": 0.36511156186612576,
+    "avg_timing_diff": 13.440000000000001,
+    "within_50ms_percent": 0.0,
+    "within_200ms_percent": 0.0
+  },
+  "no_alignment_speed": 596.598185964696
+}
