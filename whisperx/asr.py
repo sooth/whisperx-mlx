@@ -154,7 +154,7 @@ def load_model(
     compute_type: str = "float16",
     asr_options: Optional[dict] = None,
     language: Optional[str] = None,
-    vad_method: str = "pyannote",
+    vad_method: str = "silero",  # Changed from pyannote - Silero is 17x faster
     vad_options: Optional[dict] = None,
     task: str = "transcribe",
     download_root: Optional[str] = None,
@@ -174,7 +174,7 @@ def load_model(
         compute_type: Compute type (float16, float32, int4).
         asr_options: ASR options to pass to the model.
         language: Model language.
-        vad_method: VAD method to use ('pyannote' or 'silero').
+        vad_method: VAD method to use ('silero', 'pyannote', 'hybrid', 'mlx').
         vad_options: VAD options.
         task: Task to perform ('transcribe' or 'translate').
         download_root: Directory to download models to.
@@ -246,6 +246,20 @@ def load_model(
         
         if vad_options is not None:
             default_vad_options.update(vad_options)
+        
+        if vad_method == "hybrid":
+            # Use intelligent hybrid VAD that chooses optimal backend
+            from whisperx.vads.hybrid_vad import HybridVAD
+            vad_model = HybridVAD(**default_vad_options)
+        elif vad_method == "mlx" and platform.system() == "Darwin":
+            # Force MLX VAD (not recommended based on profiling)
+            try:
+                from whisperx.integrate_mlx_vad import SileroMLXVAD
+                vad_model = SileroMLXVAD(**default_vad_options)
+                print("Using MLX-optimized VAD (Note: CPU is faster for VAD)")
+            except ImportError:
+                print("MLX VAD not available, falling back to Silero")
+                vad_method = "silero"
         
         if vad_method == "silero":
             vad_model = Silero(**default_vad_options)
