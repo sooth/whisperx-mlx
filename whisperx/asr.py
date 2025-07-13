@@ -46,6 +46,10 @@ class MLXWhisperPipeline:
         
         # If no VAD, transcribe directly
         if self.vad_model is None:
+            # Check if backend supports align_words parameter
+            if hasattr(self.backend, '_align_words') and kwargs.get('word_timestamps', False):
+                kwargs['align_words'] = True
+                kwargs.pop('word_timestamps', None)
             return self.backend.transcribe(
                 audio,
                 batch_size=batch_size,
@@ -67,6 +71,11 @@ class MLXWhisperPipeline:
                 start_sample = int(segment['start'] * SAMPLE_RATE)
                 end_sample = int(segment['end'] * SAMPLE_RATE)
                 segment['audio'] = audio[start_sample:end_sample]
+            
+            # Check if backend supports align_words parameter
+            if hasattr(self.backend, '_align_words') and kwargs.get('word_timestamps', False):
+                kwargs['align_words'] = True
+                kwargs.pop('word_timestamps', None)
             
             return self.backend.transcribe_batch(
                 segments,
@@ -187,16 +196,23 @@ def load_model(
         backend = "batch" if batch_size > 1 else "standard"
     
     # Load the appropriate MLX backend
-    if backend in ["batch", "mlx_batch"]:
-        from whisperx.backends.mlx_batch_optimized import OptimizedBatchMLXWhisperBackend
-        mlx_backend = OptimizedBatchMLXWhisperBackend(
+    if backend in ["lightning", "mlx_lightning"]:
+        from whisperx.backends.mlx_lightning import WhisperMLXLightning
+        # Remove word_timestamps from kwargs as it's handled via align_words
+        kwargs_filtered = {k: v for k, v in kwargs.items() if k != 'word_timestamps'}
+        mlx_backend = WhisperMLXLightning(
+            model_name=whisper_arch,
+            compute_type=compute_type,
+            **kwargs_filtered
+        )
+    elif backend in ["batch", "mlx_batch"]:
+        from whisperx.backends.mlx_simple import SimpleMLXWhisperBackend
+        mlx_backend = SimpleMLXWhisperBackend(
             model_name=whisper_arch,
             batch_size=batch_size,
             device="mlx",
             compute_type=compute_type,
             asr_options=asr_options,
-            quantization=None,
-            model_path=None,
             **kwargs
         )
     else:
