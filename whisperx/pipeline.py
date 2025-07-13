@@ -351,8 +351,8 @@ def load_pipeline(
         UnifiedPipeline instance
         
     Example:
-        >>> from whisperx.backends.mlx_whisper import MlxWhisper
-        >>> asr = MlxWhisper("~/mlx_models/large-v3-int4", batch_size=8)
+        >>> from whisperx.backends.mlx_whisper import MlxWhisperBackend
+        >>> asr = MlxWhisperBackend("~/mlx_models/large-v3-int4", batch_size=8)
         >>> pipe = whisperx.load_pipeline(
         ...     backend=asr,
         ...     vad_filter=True,
@@ -395,9 +395,9 @@ def load_mlx_pipeline(
     Returns:
         UnifiedPipeline with MLX backend
     """
-    from whisperx.backends.mlx_whisper import MlxWhisper
+    from whisperx.backends.mlx_whisper import MlxWhisperBackend
     
-    backend = MlxWhisper(
+    backend = MlxWhisperBackend(
         model_path=model_path,
         batch_size=batch_size,
         dtype=dtype,

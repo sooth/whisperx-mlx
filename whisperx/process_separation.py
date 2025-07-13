@@ -183,13 +183,13 @@ class ProcessSeparatedPipeline:
         
         if self.use_batch_processing and len(vad_segments) > 1:
             # Use batch processor for efficiency
-            from whisperx.backends.mlx_batch_processor import BatchedMLXWhisperBackend
+            from whisperx.backends.mlx_simple import SimpleMLXWhisperBackend
             
             if verbose:
                 print(f"Using batch processing with batch_size={self.batch_size}")
             
             # Initialize batched backend with quantization support
-            backend = BatchedMLXWhisperBackend(
+            backend = SimpleMLXWhisperBackend(
                 model_name=self.model_name,
                 batch_size=self.batch_size,
                 use_batching=True,
@@ -287,12 +287,12 @@ class ProcessSeparatedPipeline:
                 # Transcribe with MLX
                 # Use quantized backend if requested
                 if self.quantization and self.quantization != "none":
-                    from whisperx.backends.mlx_quantized import QuantizedMLXWhisperBackend
+                    from whisperx.backends.mlx_whisper import MlxWhisperBackend
                     
                     if verbose:
                         print(f"Using {self.quantization} quantized model")
                     
-                    quantized_backend = QuantizedMLXWhisperBackend(
+                    quantized_backend = MlxWhisperBackend(
                         model_name=self.model_name,
                         quantization=self.quantization,
                         device=self.device,
