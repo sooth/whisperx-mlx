@@ -2,12 +2,20 @@
 Senko (CoreML) diarization backend for WhisperX-MLX.
 
 Senko provides CoreML-accelerated speaker diarization on Apple Silicon,
-achieving ~7.7 seconds for 1 hour of audio on M3.
+achieving ~11 seconds for 2 hours of audio on M3.
+
+Note: Senko is run in a subprocess to avoid OMP runtime conflicts with torch.
+This is necessary because both torch and senko's CoreML backend use OpenMP,
+and having both in the same process causes SIGSEGV crashes on long audio.
 
 See: https://github.com/narcotic-sh/senko
 """
 
+import json
 import logging
+import os
+import subprocess
+import sys
 import tempfile
 from typing import Optional, Union, List, Dict, Tuple
 
@@ -22,11 +30,54 @@ from whisperx_mlx.diarization.base import (
 logger = logging.getLogger(__name__)
 
 
+# Subprocess script to run senko in isolation
+SENKO_SUBPROCESS_SCRIPT = '''
+import json
+import sys
+import os
+
+def main():
+    # Set OMP environment before importing senko
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    os.environ["OMP_NUM_THREADS"] = "1"
+
+    import senko
+
+    audio_path = sys.argv[1]
+    min_speakers = int(sys.argv[2]) if sys.argv[2] != "None" else None
+    max_speakers = int(sys.argv[3]) if sys.argv[3] != "None" else None
+    device = sys.argv[4]
+
+    diarizer = senko.Diarizer(device=device, warmup=False)
+
+    kwargs = {}
+    if min_speakers is not None:
+        kwargs["min_speakers"] = min_speakers
+    if max_speakers is not None:
+        kwargs["max_speakers"] = max_speakers
+
+    result = diarizer.diarize(audio_path, **kwargs)
+
+    # Output JSON to stdout
+    output = {
+        "segments": result.get("merged_segments", result.get("segments", [])),
+        "speakers_detected": result.get("merged_speakers_detected", 0),
+    }
+    print(json.dumps(output))
+
+if __name__ == "__main__":
+    main()
+'''
+
+
 class SenkoDiarizationPipeline(DiarizationBackend):
     """CoreML-accelerated diarization using Senko.
 
     Senko uses Apple's CoreML and Neural Engine for fast speaker diarization
     on macOS with Apple Silicon.
+
+    Note: Senko is run in a subprocess to avoid OMP runtime conflicts with
+    torch, which can cause SIGSEGV crashes on long audio files.
     """
 
     def __init__(self, device: str = "auto"):
@@ -36,12 +87,15 @@ class SenkoDiarizationPipeline(DiarizationBackend):
             device: Device for computation. Senko supports 'auto', 'cpu', 'mps'.
                     'auto' uses CoreML with ANE when available.
         """
+        # Verify senko is installed (but don't import it - that happens in subprocess)
         try:
-            import senko
+            import importlib.util
+            if importlib.util.find_spec("senko") is None:
+                raise ImportError("senko not found")
         except ImportError:
             raise ImportError(
                 "Senko is required for CoreML diarization. "
-                "Install with: pip install senko"
+                "Install with: pip install git+https://github.com/narcotic-sh/senko.git"
             )
 
         # Map device names
@@ -52,10 +106,8 @@ class SenkoDiarizationPipeline(DiarizationBackend):
             device = "auto"
 
         logger.info(f"Initializing Senko diarizer with device={device}")
-        # Note: warmup=False to avoid OMP runtime conflicts when torch is loaded
-        # The first diarization call will be slightly slower but avoids crashes
-        self.diarizer = senko.Diarizer(device=device, warmup=False)
         self._device = device
+        self._temp_audio_file = None
 
     @property
     def backend_name(self) -> str:
@@ -95,27 +147,19 @@ class SenkoDiarizationPipeline(DiarizationBackend):
             audio_path = self._convert_audio_for_senko(audio)
 
         try:
-            # Build kwargs for Senko diarize call
-            kwargs = {}
-            if min_speakers is not None:
-                kwargs["min_speakers"] = min_speakers
-            if max_speakers is not None:
-                kwargs["max_speakers"] = max_speakers
-
-            # Run diarization
-            logger.debug(f"Running Senko diarization on {audio_path}")
-            result = self.diarizer.diarize(audio_path, **kwargs)
+            # Run diarization in subprocess to avoid OMP conflicts with torch
+            logger.debug(f"Running Senko diarization on {audio_path} (subprocess)")
+            result = self._run_senko_subprocess(
+                audio_path, min_speakers, max_speakers
+            )
 
             # Convert Senko output to our segment format
-            # Senko returns: {"merged_segments": [{"speaker_id": 0, "start": 0.0, "end": 2.5}, ...]}
             segments = self._convert_senko_output(result)
 
             # Normalize speaker IDs to SPEAKER_00 format
             segments = normalize_speaker_ids(segments)
 
             if return_embeddings:
-                # Senko doesn't expose embeddings directly
-                # Return None for embeddings
                 embeddings = self._extract_embeddings(segments)
                 return segments, embeddings
 
@@ -129,19 +173,95 @@ class SenkoDiarizationPipeline(DiarizationBackend):
 
         finally:
             # Clean up temp files
-            import os
             if temp_file is not None:
                 try:
                     os.unlink(temp_file.name)
                 except OSError:
                     pass
-            # Clean up conversion temp file
-            if hasattr(self, '_temp_audio_file') and self._temp_audio_file:
+            if self._temp_audio_file:
                 try:
                     os.unlink(self._temp_audio_file)
                 except OSError:
                     pass
                 self._temp_audio_file = None
+
+    def _run_senko_subprocess(
+        self,
+        audio_path: str,
+        min_speakers: Optional[int],
+        max_speakers: Optional[int],
+    ) -> dict:
+        """Run Senko in a subprocess to avoid OMP conflicts with torch.
+
+        This is necessary because both torch and senko's CoreML use OpenMP,
+        and having both in the same process causes SIGSEGV on long audio.
+        """
+        # Write the subprocess script to a temp file
+        script_file = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.py', delete=False
+        )
+        script_file.write(SENKO_SUBPROCESS_SCRIPT)
+        script_file.close()
+
+        try:
+            # Run subprocess with clean OMP environment to avoid conflicts
+            env = os.environ.copy()
+            # These settings prevent OMP conflicts between torch and CoreML
+            env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+            env["OMP_NUM_THREADS"] = "1"
+
+            # Try to find a Python that doesn't have torch loaded
+            # The isolated senko venv works, falling back to sys.executable
+            python_candidates = [
+                "/tmp/senko_isolated/.venv/bin/python",  # Our isolated senko venv
+                "/usr/bin/python3",  # System Python (no torch)
+                sys.executable,  # Fallback to current Python
+            ]
+
+            python_exe = sys.executable
+            for candidate in python_candidates:
+                if os.path.exists(candidate):
+                    python_exe = candidate
+                    break
+
+            logger.debug(f"Using Python interpreter: {python_exe}")
+
+            result = subprocess.run(
+                [
+                    python_exe,
+                    script_file.name,
+                    audio_path,
+                    str(min_speakers),
+                    str(max_speakers),
+                    self._device,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout
+                env=env,
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Senko subprocess failed (exit {result.returncode}): {result.stderr}")
+                raise RuntimeError(f"Senko subprocess failed: {result.stderr}")
+
+            # Log any warnings from stderr (like OMP deprecation warnings)
+            if result.stderr:
+                logger.debug(f"Senko subprocess warnings: {result.stderr.strip()}")
+
+            # Parse JSON output from subprocess
+            try:
+                output = json.loads(result.stdout.strip())
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Senko output: {result.stdout}")
+                raise RuntimeError(f"Failed to parse Senko output: {e}")
+            return output
+
+        finally:
+            try:
+                os.unlink(script_file.name)
+            except OSError:
+                pass
 
     def _convert_audio_for_senko(self, audio_path: str) -> str:
         """Convert audio file to 16kHz mono WAV format required by Senko.
@@ -158,10 +278,10 @@ class SenkoDiarizationPipeline(DiarizationBackend):
         try:
             audio_data, sample_rate = sf.read(audio_path)
         except Exception as e:
-            logger.warning(f"Could not read audio with soundfile: {e}, trying torchaudio")
-            import torchaudio
-            waveform, sample_rate = torchaudio.load(audio_path)
-            audio_data = waveform.numpy().T  # (channels, samples) -> (samples, channels)
+            logger.warning(f"Could not read audio with soundfile: {e}, trying scipy")
+            from scipy.io import wavfile
+            sample_rate, audio_data = wavfile.read(audio_path)
+            audio_data = audio_data.astype(np.float32) / 32768.0
 
         # Check if conversion is needed
         needs_conversion = False
@@ -176,17 +296,16 @@ class SenkoDiarizationPipeline(DiarizationBackend):
 
         # Resample to 16kHz if needed
         if sample_rate != 16000:
-            import torch
-            import torchaudio.functional as F
-            waveform = torch.from_numpy(audio_data).float().unsqueeze(0)
-            audio_data = F.resample(waveform, sample_rate, 16000).squeeze().numpy()
+            from scipy import signal
+            num_samples = int(len(audio_data) * 16000 / sample_rate)
+            audio_data = signal.resample(audio_data, num_samples)
             needs_conversion = True
 
         if needs_conversion:
             # Save to temp file
             temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            sf.write(temp_file.name, audio_data, 16000, subtype='PCM_16')
-            self._temp_audio_file = temp_file.name  # Track for cleanup
+            sf.write(temp_file.name, audio_data.astype(np.float32), 16000, subtype='PCM_16')
+            self._temp_audio_file = temp_file.name
             return temp_file.name
 
         return audio_path
@@ -194,26 +313,15 @@ class SenkoDiarizationPipeline(DiarizationBackend):
     def _convert_senko_output(self, result: dict) -> List[DiarizationSegment]:
         """Convert Senko output format to DiarizationSegment list.
 
-        Senko returns:
-            {"merged_segments": [{"speaker_id": 0, "start": 0.0, "end": 2.5}, ...]}
-
-        We convert to:
-            [DiarizationSegment(start=0.0, end=2.5, speaker="0"), ...]
+        Senko returns segments with 'speaker' key in SPEAKER_XX format.
         """
         segments = []
 
-        # Handle different possible output formats from Senko
-        if "merged_segments" in result:
-            raw_segments = result["merged_segments"]
-        elif "segments" in result:
-            raw_segments = result["segments"]
-        else:
-            logger.warning(f"Unexpected Senko output format: {result.keys()}")
-            raw_segments = []
+        raw_segments = result.get("segments", [])
 
         for seg in raw_segments:
-            # Senko uses speaker_id (int) or speaker (str)
-            speaker_id = seg.get("speaker_id", seg.get("speaker", 0))
+            # Senko uses 'speaker' key with SPEAKER_XX format
+            speaker_id = seg.get("speaker", seg.get("speaker_id", "0"))
             segments.append(DiarizationSegment(
                 start=float(seg["start"]),
                 end=float(seg["end"]),
