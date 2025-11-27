@@ -253,12 +253,15 @@ class MLXWhisperPipeline(ASRBackend):
                 continue
 
             # Transcribe chunk
+            # NOTE: Never pass verbose=True to mlx_whisper when processing chunks,
+            # because it prints timestamps relative to the chunk, not the full audio.
+            # We handle verbose output ourselves with corrected timestamps below.
             result = self._mlx_whisper.transcribe(
                 audio_chunk,
                 path_or_hf_repo=self._model_path,
                 language=language,
                 task=task,
-                verbose=verbose,
+                verbose=False,  # Always False - we print with correct offsets below
                 initial_prompt=self.asr_options.get("initial_prompt"),
                 temperature=self.asr_options.get("temperatures", (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)),
                 compression_ratio_threshold=self.asr_options.get("compression_ratio_threshold", 2.4),
@@ -277,6 +280,13 @@ class MLXWhisperPipeline(ASRBackend):
             )
             all_segments.extend(chunk_segments)
 
+            # Print verbose output with corrected timestamps
+            if verbose:
+                for s in chunk_segments:
+                    start_ts = self._format_timestamp(s["start"])
+                    end_ts = self._format_timestamp(s["end"])
+                    print(f"[{start_ts} --> {end_ts}] {s['text']}")
+
             if print_progress:
                 progress = ((idx + 1) / len(merged_segments)) * 100
                 print(f"Transcription progress: {progress:.1f}%")
@@ -285,6 +295,12 @@ class MLXWhisperPipeline(ASRBackend):
             "segments": all_segments,
             "language": detected_language or "en",
         }
+
+    def _format_timestamp(self, seconds: float) -> str:
+        """Format seconds as MM:SS.mmm timestamp."""
+        mins = int(seconds // 60)
+        secs = seconds % 60
+        return f"{mins:02d}:{secs:06.3f}"
 
     def _convert_segments(
         self,

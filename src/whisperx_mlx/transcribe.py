@@ -8,6 +8,7 @@ alignment/diarization.
 
 import gc
 import logging
+from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Optional, Union, List, Dict, Any
 
 import numpy as np
@@ -18,6 +19,35 @@ from whisperx_mlx.backends import load_model, get_default_device
 from whisperx_mlx.schema import TranscriptionResult, AlignedTranscriptionResult
 
 logger = logging.getLogger(__name__)
+
+
+# Global executor for background model loading
+_model_loader_executor: Optional[ThreadPoolExecutor] = None
+
+
+def _get_model_loader_executor() -> ThreadPoolExecutor:
+    """Get or create the background model loader executor."""
+    global _model_loader_executor
+    if _model_loader_executor is None:
+        _model_loader_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="model_loader")
+    return _model_loader_executor
+
+
+def _load_diarization_model_background(
+    hf_token: Optional[str],
+    device: str,
+    backend: str,
+) -> "DiarizationPipeline":
+    """Load diarization model in background thread."""
+    from whisperx_mlx.diarize import DiarizationPipeline
+    logger.debug("Background: Starting diarization model load...")
+    model = DiarizationPipeline(
+        use_auth_token=hf_token,
+        device=device,
+        backend=backend,
+    )
+    logger.debug("Background: Diarization model loaded!")
+    return model
 
 
 def transcribe(
@@ -238,6 +268,9 @@ def transcribe_with_diarization(
     This performs transcription, optional alignment, and speaker diarization
     to identify who said what.
 
+    The diarization model is loaded in a background thread while transcription
+    and alignment are running, significantly reducing total processing time.
+
     Args:
         audio: Path to audio file or numpy array
         model: Whisper model name
@@ -254,11 +287,22 @@ def transcribe_with_diarization(
     Returns:
         Transcription result with speaker labels assigned to segments
     """
-    from whisperx_mlx.diarize import DiarizationPipeline, assign_word_speakers
+    from whisperx_mlx.diarize import assign_word_speakers
 
     # Determine device
     if device is None:
         device = get_default_device()
+
+    # Start loading diarization model in background thread IMMEDIATELY
+    # This runs in parallel with transcription and alignment
+    logger.info("Starting diarization model load in background...")
+    executor = _get_model_loader_executor()
+    diarize_model_future: Future = executor.submit(
+        _load_diarization_model_background,
+        hf_token,
+        device,
+        diarization_backend,
+    )
 
     # Load audio
     if isinstance(audio, str):
@@ -269,6 +313,7 @@ def transcribe_with_diarization(
         audio_data = audio
 
     # Transcribe (with or without alignment)
+    # This runs while diarization model loads in background
     if align:
         result = transcribe_with_alignment(
             audio_data,
@@ -288,15 +333,15 @@ def transcribe_with_diarization(
 
     if not result.get("segments"):
         logger.warning("No segments to diarize")
+        # Cancel the background load if possible
+        diarize_model_future.cancel()
         return result
 
-    # Perform diarization
+    # Wait for diarization model to finish loading
+    # By now, it should be ready (or close to ready) since transcription takes ~7-11s
+    logger.info("Waiting for diarization model...")
+    diarize_model = diarize_model_future.result()
     logger.info(f"Performing diarization (backend: {diarization_backend})...")
-    diarize_model = DiarizationPipeline(
-        use_auth_token=hf_token,
-        device=device,
-        backend=diarization_backend,
-    )
 
     # Diarization needs the audio path or we need to save temporarily
     if audio_path:
