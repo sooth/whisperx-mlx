@@ -1,0 +1,135 @@
+[project]
+name = "whisperx-mlx"
+version = "0.1.0"
+description = "WhisperX with MLX acceleration for Apple Silicon - speech recognition with alignment and diarization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-2-Clause" }
+authors = [{ name = "WhisperX-MLX Contributors" }]
+keywords = ["whisper", "speech-recognition", "mlx", "apple-silicon", "transcription", "diarization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    # Core ML dependencies
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "transformers>=4.40.0",
+    "numpy>=1.24.0",
+
+    # Alignment & Diarization
+    "pyannote-audio>=3.1.0",
+
+    # Audio processing
+    "av>=10.0.0",
+
+    # NLP
+    "nltk>=3.8.0",
+
+    # Utils
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+# MLX backend for Apple Silicon (auto-selected on macOS ARM64)
+mlx = [
+    "mlx>=0.10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-whisper>=0.4.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
+# Faster-whisper backend for CUDA/CPU (fallback)
+faster-whisper = [
+    "faster-whisper>=1.0.0",
+    "ctranslate2>=4.0.0",
+]
+
+# Fast diarization using Senko (CoreML-accelerated on Apple Silicon)
+# Note: senko must be installed from git: uv pip install "git+https://github.com/narcotic-sh/senko.git"
+senko = [
+    "senko @ git+https://github.com/narcotic-sh/senko.git",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+# All backends
+all = [
+    "whisperx-mlx[mlx,faster-whisper,senko]",
+]
+
+[project.scripts]
+whisperx-mlx = "whisperx_mlx.__main__:cli"
+
+[project.urls]
+Repository = "https://github.com/your-username/whisperx-mlx"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whisperx_mlx"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+# PyTorch sources for different platforms
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'darwin'" },
+    { index = "pytorch-cpu", marker = "platform_machine != 'x86_64' and sys_platform != 'darwin'" },
+    { index = "pytorch", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+]
+torchaudio = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'darwin'" },
+    { index = "pytorch-cpu", marker = "platform_machine != 'x86_64' and sys_platform != 'darwin'" },
+    { index = "pytorch", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
