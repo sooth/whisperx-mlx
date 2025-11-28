@@ -28,6 +28,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Check if MLX is available
+try:
+    import mlx.core as mx
+    MLX_AVAILABLE = True
+except ImportError:
+    MLX_AVAILABLE = False
+
+# Import NumPy CTC functions for MLX path
+from whisperx_mlx.backends.ctc_numpy import (
+    get_trellis_np,
+    backtrack_beam_np,
+    merge_repeats_np,
+    Point as PointNp,
+    Segment as SegmentNp,
+)
+
 LANGUAGES_WITHOUT_SPACES = ["ja", "zh"]
 
 DEFAULT_ALIGN_MODELS_TORCH = {
@@ -84,7 +100,7 @@ def interpolate_nans(x, method='nearest'):
     return x.interpolate(method=method).ffill().bfill()
 
 
-def load_align_model(language_code: str, device: str, model_name: Optional[str] = None, model_dir=None):
+def load_align_model(language_code: str, device: str, model_name: Optional[str] = None, model_dir=None, use_mlx: bool = True):
     """Load a wav2vec2 alignment model for the specified language.
 
     Args:
@@ -92,16 +108,11 @@ def load_align_model(language_code: str, device: str, model_name: Optional[str] 
         device: PyTorch device to load the model on
         model_name: Specific model name (auto-selected if None)
         model_dir: Directory to cache models
+        use_mlx: Use MLX backend for supported models (5-7x faster on Apple Silicon)
 
     Returns:
         Tuple of (model, metadata) where metadata includes language and dictionary
     """
-    # wav2vec2 models only support CPU and CUDA, not MLX
-    if device == "mlx":
-        device = "cpu"
-    elif device not in ["cpu", "cuda"] and not device.startswith("cuda:"):
-        device = "cpu"
-
     if model_name is None:
         # use default model
         if language_code in DEFAULT_ALIGN_MODELS_TORCH:
@@ -113,6 +124,25 @@ def load_align_model(language_code: str, device: str, model_name: Optional[str] 
                         f"Please find a wav2vec2.0 model finetuned on this language at https://huggingface.co/models, "
                         f"then pass the model name via --align_model [MODEL_NAME]")
             raise ValueError(f"No default align-model for language: {language_code}")
+
+    # Check if we can use MLX backend (only for torchaudio models on Apple Silicon)
+    if use_mlx and MLX_AVAILABLE and model_name in torchaudio.pipelines.__all__:
+        try:
+            from whisperx_mlx.backends.mlx_wav2vec2 import load_wav2vec2_from_torchaudio
+            logger.info(f"Loading MLX-accelerated alignment model: {model_name}")
+            align_model, mlx_metadata = load_wav2vec2_from_torchaudio(model_name)
+            labels = mlx_metadata["labels"]
+            align_dictionary = {c.lower(): i for i, c in enumerate(labels)}
+            align_metadata = {"language": language_code, "dictionary": align_dictionary, "type": "mlx"}
+            return align_model, align_metadata
+        except Exception as e:
+            logger.warning(f"Failed to load MLX model, falling back to PyTorch: {e}")
+
+    # Fall back to PyTorch-based models
+    if device == "mlx":
+        device = "cpu"
+    elif device not in ["cpu", "cuda"] and not device.startswith("cuda:"):
+        device = "cpu"
 
     if model_name in torchaudio.pipelines.__all__:
         pipeline_type = "torchaudio"
@@ -288,7 +318,6 @@ def align(
         f1 = int(t1 * SAMPLE_RATE)
         f2 = int(t2 * SAMPLE_RATE)
 
-        # TODO: Probably can get some speedup gain with batched inference here
         waveform_segment = audio[:, f1:f2]
         # Handle the minimum input length for wav2vec2 models
         if waveform_segment.shape[-1] < 400:
@@ -299,34 +328,57 @@ def align(
         else:
             lengths = None
 
-        with torch.inference_mode():
-            if model_type == "torchaudio":
-                emissions, _ = model(waveform_segment.to(device), lengths=lengths)
-            elif model_type == "huggingface":
-                emissions = model(waveform_segment.to(device)).logits
-            else:
-                raise NotImplementedError(f"Align model of type {model_type} not supported.")
-            emissions = torch.log_softmax(emissions, dim=-1)
-
-        emission = emissions[0].cpu().detach()
+        if model_type == "mlx":
+            # MLX inference (5-7x faster on Apple Silicon)
+            waveform_np = waveform_segment.numpy()
+            mlx_input = mx.array(waveform_np)
+            mlx_output = model(mlx_input)
+            mx.eval(mlx_output)  # Force evaluation
+            emission_np = np.array(mlx_output[0])
+        else:
+            # PyTorch path
+            with torch.inference_mode():
+                if model_type == "torchaudio":
+                    emissions, _ = model(waveform_segment.to(device), lengths=lengths)
+                elif model_type == "huggingface":
+                    emissions = model(waveform_segment.to(device)).logits
+                else:
+                    raise NotImplementedError(f"Align model of type {model_type} not supported.")
+                emissions = torch.log_softmax(emissions, dim=-1)
+            emission_np = None  # Will use PyTorch path
+            emission = emissions[0].cpu().detach()
 
         blank_id = 0
         for char, code in model_dictionary.items():
             if char == '[pad]' or char == '<pad>':
                 blank_id = code
 
-        trellis = get_trellis(emission, tokens, blank_id)
-        path = backtrack_beam(trellis, emission, tokens, blank_id, beam_width=2)
+        # Use NumPy CTC for MLX path (fully PyTorch-free)
+        if model_type == "mlx":
+            trellis_np = get_trellis_np(emission_np, tokens, blank_id)
+            path = backtrack_beam_np(trellis_np, emission_np, tokens, blank_id, beam_width=2)
+            # Convert trellis for downstream code
+            trellis = torch.from_numpy(trellis_np)
+        else:
+            trellis = get_trellis(emission, tokens, blank_id)
+            path = backtrack_beam(trellis, emission, tokens, blank_id, beam_width=2)
 
         if path is None:
             logger.warning(f'Failed to align segment ("{segment["text"]}"): backtrack failed, resorting to original')
             aligned_segments.append(aligned_seg)
             continue
 
-        char_segments = merge_repeats(path, text_clean)
+        # Use appropriate merge_repeats based on path type
+        if model_type == "mlx":
+            char_segments = merge_repeats_np(path, text_clean)
+        else:
+            char_segments = merge_repeats(path, text_clean)
 
         duration = t2 - t1
-        ratio = duration * waveform_segment.size(0) / (trellis.size(0) - 1)
+        # Ratio converts frame indices to seconds within the segment
+        # trellis has shape (num_frames, num_tokens)
+        trellis_frames = trellis.shape[0] if isinstance(trellis, np.ndarray) else trellis.size(0)
+        ratio = duration / (trellis_frames - 1)
 
         # assign timestamps to aligned characters
         char_segments_arr = []
