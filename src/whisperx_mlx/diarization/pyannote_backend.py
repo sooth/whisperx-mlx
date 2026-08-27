@@ -55,8 +55,11 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
             else:
                 device = "cpu"
         elif device == "mlx":
-            # pyannote doesn't support MLX, fall back to CPU
-            device = "cpu"
+            # pyannote doesn't support MLX; use Apple GPU via MPS if available
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
 
         self._device = device
         self.pipeline = None
