@@ -66,7 +66,7 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
 
             self.pipeline = Pipeline.from_pretrained(
                 model_name,
-                use_auth_token=use_auth_token,
+                token=use_auth_token,
             )
             self.pipeline.to(torch.device(device))
             logger.info(f"Loaded pyannote diarization model: {model_name} on {device}")
