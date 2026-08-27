@@ -130,6 +130,13 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
             logger.debug(f"Running pyannote diarization on {audio_input}")
             diarization = self.pipeline(audio_input, **kwargs)
 
+            # pyannote 4.x wraps the Annotation in an output object; unwrap it
+            if not hasattr(diarization, "itertracks"):
+                for attr in ("speaker_diarization", "annotation", "diarization"):
+                    inner = getattr(diarization, attr, None)
+                    if inner is not None and hasattr(inner, "itertracks"):
+                        diarization = inner
+                        break
             # Convert to segments
             segments = []
             for turn, _, speaker in diarization.itertracks(yield_label=True):
