@@ -8,7 +8,13 @@ See: https://github.com/pyannote/pyannote-audio
 """
 
 import logging
+import os
 from typing import Optional, Union, List, Dict, Tuple
+
+# pyannote.audio 4.x sends OpenTelemetry usage data to otel.pyannote.ai by
+# default. Disable unless the user has explicitly opted in; must be set
+# before pyannote.audio is imported.
+os.environ.setdefault("PYANNOTE_METRICS_ENABLED", "false")
 
 import numpy as np
 import torch
