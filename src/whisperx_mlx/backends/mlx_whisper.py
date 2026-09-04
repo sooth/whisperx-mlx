@@ -8,6 +8,7 @@ Supports batched inference for significant speedup on longer audio files.
 """
 
 from typing import Optional, Union, List, Dict, Any, Tuple
+import os
 import numpy as np
 import logging
 
@@ -88,6 +89,12 @@ class MLXWhisperPipeline(ASRBackend):
             language: Preset language code (None for auto-detection)
             asr_options: Additional options for transcription
         """
+        # Keep Hugging Face caches off the internal disk when the X10 is mounted.
+        x10 = "/Volumes/Crucial X10/huggingface"
+        if os.path.isdir(x10) and not os.environ.get("HF_HOME"):
+            os.environ["HF_HOME"] = x10
+            os.environ["HF_HUB_CACHE"] = os.path.join(x10, "hub")
+
         # Lazy import mlx_whisper to avoid import errors on non-Apple platforms
         try:
             import mlx_whisper
@@ -112,6 +119,13 @@ class MLXWhisperPipeline(ASRBackend):
         # Model caching for batched inference
         self._cached_model = None
         self._model_dtype = None
+        self._decoding_task = None
+        self._decoding_task_key = None
+        self._tokenizer_cache: Dict[str, Any] = {}
+
+        from whisperx_mlx.backends.mlx_speedups import apply_mlx_decode_speedups
+
+        apply_mlx_decode_speedups()
 
         logger.info(f"Initialized MLX-Whisper backend with model: {self._model_path}")
 
@@ -134,13 +148,20 @@ class MLXWhisperPipeline(ASRBackend):
             self._model_dtype = mx.float16
             logger.info(f"Loading MLX model for batched inference: {self._model_path}")
             self._cached_model = load_model(self._model_path, dtype=self._model_dtype)
+            import mlx.nn as nn
+            from whisperx_mlx.backends.mlx_speedups import preheat_metal
+
+            # 8-bit decoder: WER 0 vs fp16 greedy on short.wav; encoder stays fp16
+            # (8-bit encoder was slower on M4 Max).
+            nn.quantize(self._cached_model.decoder, bits=8, group_size=64)
+            preheat_metal()
             logger.info("MLX model loaded successfully")
         return self._cached_model
 
     def transcribe(
         self,
         audio: Union[str, np.ndarray],
-        batch_size: Optional[int] = 4,
+        batch_size: Optional[int] = 16,
         language: Optional[str] = None,
         task: str = "transcribe",
         chunk_size: int = 30,
@@ -151,9 +172,9 @@ class MLXWhisperPipeline(ASRBackend):
 
         Args:
             audio: Path to audio file or numpy array of audio samples (16kHz mono float32)
-            batch_size: Number of VAD chunks to process in parallel (default: 4)
+            batch_size: Number of VAD chunks to process in parallel (default: 16)
                 Higher values use more memory but are faster.
-                Recommended: 4 for large models, 8-16 for smaller models.
+                Matches the public transcribe() / CLI default.
             language: Language code (e.g., 'en'). None for auto-detection.
             task: 'transcribe' or 'translate' (to English)
             chunk_size: Maximum duration (seconds) of audio chunks
@@ -170,7 +191,7 @@ class MLXWhisperPipeline(ASRBackend):
 
         # Determine language
         effective_language = language or self.preset_language
-        effective_batch_size = batch_size if batch_size is not None else 4
+        effective_batch_size = batch_size if batch_size is not None else 16
 
         # If we have a VAD model, use it to segment the audio
         if self.vad_model is not None:
@@ -226,7 +247,7 @@ class MLXWhisperPipeline(ASRBackend):
     def _transcribe_with_vad(
         self,
         audio: np.ndarray,
-        batch_size: int = 4,
+        batch_size: int = 16,
         language: Optional[str] = None,
         task: str = "transcribe",
         chunk_size: int = 30,
@@ -237,7 +258,7 @@ class MLXWhisperPipeline(ASRBackend):
 
         Args:
             audio: Audio samples (16kHz mono float32)
-            batch_size: Number of chunks to process in parallel (default: 4)
+            batch_size: Number of chunks to process in parallel (default: 16)
             language: Language code (None for auto-detection)
             task: 'transcribe' or 'translate'
             chunk_size: Max chunk duration for VAD merging
@@ -248,20 +269,47 @@ class MLXWhisperPipeline(ASRBackend):
             TranscriptionResult with segments and language
         """
         import torch
+
+        # One Torch thread for the whole VAD+decode call: Silero is fastest
+        # single-threaded, and extra Torch pools steal P-cores from MLX.
+        prev_threads = torch.get_num_threads()
+        torch.set_num_threads(1)
+        try:
+            return self._transcribe_with_vad_body(
+                audio,
+                batch_size=batch_size,
+                language=language,
+                task=task,
+                chunk_size=chunk_size,
+                print_progress=print_progress,
+                verbose=verbose,
+            )
+        finally:
+            torch.set_num_threads(prev_threads)
+
+    def _transcribe_with_vad_body(
+        self,
+        audio: np.ndarray,
+        batch_size: int,
+        language: Optional[str],
+        task: str,
+        chunk_size: int,
+        print_progress: bool,
+        verbose: bool,
+    ) -> TranscriptionResult:
+        import torch
         import mlx.core as mx
         from whisperx_mlx.audio import SAMPLE_RATE
         from mlx_whisper.decoding import detect_language as mlx_detect_language
 
-        # Preprocess audio for VAD
         if hasattr(self.vad_model, 'preprocess_audio'):
             waveform = self.vad_model.preprocess_audio(audio)
         else:
             waveform = torch.from_numpy(audio).unsqueeze(0)
 
-        # Run VAD
-        vad_segments = self.vad_model({"waveform": waveform, "sample_rate": SAMPLE_RATE})
+        with torch.inference_mode():
+            vad_segments = self.vad_model({"waveform": waveform, "sample_rate": SAMPLE_RATE})
 
-        # Merge VAD segments into chunks
         if hasattr(self.vad_model, 'merge_chunks'):
             merged_segments = self.vad_model.merge_chunks(
                 vad_segments,
@@ -270,7 +318,6 @@ class MLXWhisperPipeline(ASRBackend):
                 offset=self._vad_params.get("vad_offset", 0.363),
             )
         else:
-            # Fallback: treat entire audio as one segment
             merged_segments = [{"start": 0, "end": len(audio) / SAMPLE_RATE}]
 
         if not merged_segments:
@@ -336,6 +383,57 @@ class MLXWhisperPipeline(ASRBackend):
             "segments": all_segments,
             "language": detected_language,
         }
+
+    def transcribe_sequential(
+        self,
+        audio: np.ndarray,
+        language: Optional[str] = None,
+        task: str = "transcribe",
+        chunk_size: int = 30,
+        verbose: bool = False,
+    ) -> TranscriptionResult:
+        """Per-VAD-segment mlx_whisper.transcribe — quality/speed baseline."""
+        from whisperx_mlx.audio import SAMPLE_RATE
+
+        if self.vad_model is None:
+            return self._transcribe_direct(audio, language=language, task=task, verbose=verbose)
+
+        if hasattr(self.vad_model, "preprocess_audio"):
+            waveform = self.vad_model.preprocess_audio(audio)
+        else:
+            import torch
+            waveform = torch.from_numpy(audio).unsqueeze(0)
+
+        vad_segments = self.vad_model({"waveform": waveform, "sample_rate": SAMPLE_RATE})
+        if hasattr(self.vad_model, "merge_chunks"):
+            merged = self.vad_model.merge_chunks(
+                vad_segments,
+                chunk_size,
+                onset=self._vad_params.get("vad_onset", 0.5),
+                offset=self._vad_params.get("vad_offset", 0.363),
+            )
+        else:
+            merged = [{"start": 0, "end": len(audio) / SAMPLE_RATE}]
+
+        language = language or self.preset_language
+        all_segments: List[SingleSegment] = []
+        detected = language
+        for seg in merged:
+            start_sample = int(seg["start"] * SAMPLE_RATE)
+            end_sample = int(seg["end"] * SAMPLE_RATE)
+            chunk = audio[start_sample:end_sample]
+            if len(chunk) < SAMPLE_RATE * 0.1:
+                continue
+            result = self._transcribe_direct(
+                chunk, language=language, task=task, verbose=verbose
+            )
+            if detected is None:
+                detected = result.get("language")
+            for s in result.get("segments", []):
+                s["start"] = round(s["start"] + seg["start"], 3)
+                s["end"] = round(s["end"] + seg["start"], 3)
+                all_segments.append(s)
+        return {"segments": all_segments, "language": detected or "en"}
 
     def _format_timestamp(self, seconds: float) -> str:
         """Format seconds as MM:SS.mmm timestamp."""
@@ -442,21 +540,30 @@ class MLXWhisperPipeline(ASRBackend):
         # Build decoding options from asr_options
         temperatures = self.asr_options.get("temperatures", (0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
         temp = temperatures[0] if isinstance(temperatures, (list, tuple)) else temperatures
+        suppress_tokens = self.asr_options.get("suppress_tokens", "-1")
 
         options = DecodingOptions(
             task=task,
             language=language,
             temperature=temp,
             fp16=True,
-            suppress_tokens=self.asr_options.get("suppress_tokens", "-1"),
+            suppress_tokens=suppress_tokens,
             without_timestamps=False,  # We need timestamps for segment splitting
         )
 
-        # Run batched decode using mlx-whisper's DecodingTask
-        task_runner = DecodingTask(self._model, options)
-        results = task_runner.run(mel_batch)
+        key = (task, language, temp, suppress_tokens)
+        if self._decoding_task is None or self._decoding_task_key != key:
+            self._decoding_task = DecodingTask(self._model, options)
+            self._decoding_task_key = key
+        import gc
 
-        return results
+        gc_on = gc.isenabled()
+        gc.disable()
+        try:
+            return self._decoding_task.run(mel_batch)
+        finally:
+            if gc_on:
+                gc.enable()
 
     def _process_decode_results(
         self,
@@ -498,13 +605,16 @@ class MLXWhisperPipeline(ASRBackend):
             if compression_threshold and result.compression_ratio > compression_threshold:
                 continue
 
-            # Get tokenizer for this language
-            tokenizer = get_tokenizer(
-                self._model.is_multilingual,
-                num_languages=self._model.num_languages,
-                language=result.language,
-                task="transcribe",
-            )
+            lang = result.language or "en"
+            tokenizer = self._tokenizer_cache.get(lang)
+            if tokenizer is None:
+                tokenizer = get_tokenizer(
+                    self._model.is_multilingual,
+                    num_languages=self._model.num_languages,
+                    language=lang,
+                    task="transcribe",
+                )
+                self._tokenizer_cache[lang] = tokenizer
 
             tokens = list(result.tokens)
 
