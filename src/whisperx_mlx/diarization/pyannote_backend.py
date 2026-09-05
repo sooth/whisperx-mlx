@@ -8,7 +8,13 @@ See: https://github.com/pyannote/pyannote-audio
 """
 
 import logging
+import os
 from typing import Optional, Union, List, Dict, Tuple
+
+# pyannote.audio 4.x sends OpenTelemetry usage data to otel.pyannote.ai by
+# default. Disable unless the user has explicitly opted in; must be set
+# before pyannote.audio is imported.
+os.environ.setdefault("PYANNOTE_METRICS_ENABLED", "false")
 
 import numpy as np
 import torch
@@ -55,8 +61,11 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
             else:
                 device = "cpu"
         elif device == "mlx":
-            # pyannote doesn't support MLX, fall back to CPU
-            device = "cpu"
+            # pyannote doesn't support MLX; use Apple GPU via MPS if available
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
 
         self._device = device
         self.pipeline = None
@@ -66,7 +75,7 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
 
             self.pipeline = Pipeline.from_pretrained(
                 model_name,
-                use_auth_token=use_auth_token,
+                token=use_auth_token,
             )
             self.pipeline.to(torch.device(device))
             logger.info(f"Loaded pyannote diarization model: {model_name} on {device}")
@@ -130,6 +139,13 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
             logger.debug(f"Running pyannote diarization on {audio_input}")
             diarization = self.pipeline(audio_input, **kwargs)
 
+            # pyannote 4.x wraps the Annotation in an output object; unwrap it
+            if not hasattr(diarization, "itertracks"):
+                for attr in ("speaker_diarization", "annotation", "diarization"):
+                    inner = getattr(diarization, attr, None)
+                    if inner is not None and hasattr(inner, "itertracks"):
+                        diarization = inner
+                        break
             # Convert to segments
             segments = []
             for turn, _, speaker in diarization.itertracks(yield_label=True):
