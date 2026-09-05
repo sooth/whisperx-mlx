@@ -8,8 +8,9 @@ alignment/diarization.
 
 import gc
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, Future
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, Tuple
 
 import numpy as np
 import torch
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Global executor for background model loading
 _model_loader_executor: Optional[ThreadPoolExecutor] = None
+_cache_lock = threading.Lock()
+_ASR_CACHE: Dict[tuple, Any] = {}
+_ALIGN_CACHE: Dict[tuple, Tuple[Any, dict]] = {}
 
 
 def _get_model_loader_executor() -> ThreadPoolExecutor:
@@ -31,6 +35,122 @@ def _get_model_loader_executor() -> ThreadPoolExecutor:
     if _model_loader_executor is None:
         _model_loader_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="model_loader")
     return _model_loader_executor
+
+
+def _freeze(value: Any) -> Any:
+    """Hashable snapshot of asr_options / nested configs for the model cache key."""
+    if isinstance(value, dict):
+        return tuple(sorted((str(k), _freeze(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(v) for v in value)
+    if isinstance(value, (int, float, str, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _asr_cache_key(
+    model: Optional[str],
+    backend: str,
+    device: Optional[str],
+    device_index: int,
+    compute_type: str,
+    language: Optional[str],
+    task: str,
+    vad_method: str,
+    vad_onset: float,
+    vad_offset: float,
+    chunk_size: int,
+    asr_options: Dict[str, Any],
+) -> tuple:
+    return (
+        model,
+        backend,
+        device,
+        device_index,
+        compute_type,
+        language,
+        task,
+        vad_method,
+        round(float(vad_onset), 6),
+        round(float(vad_offset), 6),
+        chunk_size,
+        _freeze(asr_options),
+    )
+
+
+def _get_cached_asr(
+    *,
+    model: Optional[str],
+    backend: str,
+    device: Optional[str],
+    device_index: int,
+    compute_type: str,
+    language: Optional[str],
+    vad_method: str,
+    vad_onset: float,
+    vad_offset: float,
+    chunk_size: int,
+    asr_options: Dict[str, Any],
+):
+    key = _asr_cache_key(
+        model,
+        backend,
+        device,
+        device_index,
+        compute_type,
+        language,
+        "transcribe",
+        vad_method,
+        vad_onset,
+        vad_offset,
+        chunk_size,
+        asr_options,
+    )
+    with _cache_lock:
+        hit = _ASR_CACHE.get(key)
+    if hit is not None:
+        return hit
+    logger.info(f"Loading model: {model} (backend: {backend})")
+    pipe = load_model(
+        model_name=model,
+        backend=backend,
+        device=device,
+        device_index=device_index,
+        compute_type=compute_type,
+        language=language,
+        vad_method=vad_method,
+        vad_options={
+            "chunk_size": chunk_size,
+            "vad_onset": vad_onset,
+            "vad_offset": vad_offset,
+        },
+        asr_options=asr_options,
+    )
+    with _cache_lock:
+        return _ASR_CACHE.setdefault(key, pipe)
+
+
+def _get_cached_align_model(language_code: str, device: str, model_name: Optional[str]):
+    from whisperx_mlx.alignment import load_align_model
+
+    key = (language_code, model_name, device)
+    with _cache_lock:
+        hit = _ALIGN_CACHE.get(key)
+    if hit is not None:
+        return hit
+    logger.info(f"Loading alignment model for language: {language_code}")
+    align_model_obj, align_metadata = load_align_model(
+        language_code,
+        device,
+        model_name=model_name,
+    )
+    if align_model_obj is not None and hasattr(align_model_obj, "eval"):
+        align_model_obj.eval()
+    packed = (align_model_obj, align_metadata)
+    if align_model_obj is None:
+        return packed
+    with _cache_lock:
+        return _ALIGN_CACHE.setdefault(key, packed)
 
 
 def _load_diarization_model_background(
@@ -106,12 +226,13 @@ def transcribe(
     if device is None:
         device = get_default_device()
 
-    # Load audio if path is provided
+    # Load audio if path is provided. Copy ndarrays so timed calls always
+    # pay Silero (no identity-based VAD skip) while models stay cached.
     if isinstance(audio, str):
         logger.info(f"Loading audio: {audio}")
         audio_data = load_audio(audio)
     else:
-        audio_data = audio
+        audio_data = np.array(audio, copy=True, dtype=np.float32)
 
     # Set up default ASR options
     default_asr_options = {
@@ -124,21 +245,17 @@ def transcribe(
     if asr_options:
         default_asr_options.update(asr_options)
 
-    # Load model with VAD
-    logger.info(f"Loading model: {model} (backend: {backend})")
-    asr_model = load_model(
-        model_name=model,
+    asr_model = _get_cached_asr(
+        model=model,
         backend=backend,
         device=device,
         device_index=device_index,
         compute_type=compute_type,
         language=language,
         vad_method=vad_method,
-        vad_options={
-            "chunk_size": chunk_size,
-            "vad_onset": vad_onset,
-            "vad_offset": vad_offset,
-        },
+        vad_onset=vad_onset,
+        vad_offset=vad_offset,
+        chunk_size=chunk_size,
         asr_options=default_asr_options,
     )
 
@@ -153,12 +270,6 @@ def transcribe(
         print_progress=print_progress,
         verbose=verbose,
     )
-
-    # Cleanup
-    del asr_model
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
     return result
 
@@ -189,7 +300,7 @@ def transcribe_with_alignment(
     Returns:
         AlignedTranscriptionResult with word-level timestamps
     """
-    from whisperx_mlx.alignment import load_align_model, align
+    from whisperx_mlx.alignment import align
 
     # Determine device
     if device is None:
@@ -197,13 +308,13 @@ def transcribe_with_alignment(
 
     # Load audio if needed
     if isinstance(audio, str):
-        audio_path = audio
         audio_data = load_audio(audio)
     else:
-        audio_path = None
-        audio_data = audio
+        audio_data = np.array(audio, copy=True, dtype=np.float32)
 
-    # First, transcribe
+    # First, transcribe (ASR pipeline is process-cached). MLX wav2vec2 must
+    # be constructed on this thread — a worker-thread load has no GPU stream
+    # for later mx.eval.
     result = transcribe(
         audio_data,
         model=model,
@@ -220,12 +331,8 @@ def transcribe_with_alignment(
     # Determine alignment language
     align_language = language or result.get("language", "en")
 
-    # Load alignment model
-    logger.info(f"Loading alignment model for language: {align_language}")
-    align_model_obj, align_metadata = load_align_model(
-        align_language,
-        device,
-        model_name=align_model,
+    align_model_obj, align_metadata = _get_cached_align_model(
+        align_language, device, align_model
     )
 
     if align_model_obj is None:
@@ -241,12 +348,6 @@ def transcribe_with_alignment(
         audio_data,
         device,
     )
-
-    # Cleanup
-    del align_model_obj
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
     return aligned_result
 

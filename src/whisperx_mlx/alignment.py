@@ -168,6 +168,47 @@ def load_align_model(language_code: str, device: str, model_name: Optional[str] 
     return align_model, align_metadata
 
 
+def _collect_mlx_emissions(
+    model,
+    audio: torch.Tensor,
+    transcript: List[dict],
+    segment_data: dict,
+    max_duration: float,
+) -> dict:
+    """Run MLX wav2vec2 on all alignable segments (batched transformer)."""
+    waves = []
+    keys = []
+    for sdx, segment in enumerate(transcript):
+        if len(segment_data[sdx]["clean_char"]) == 0:
+            continue
+        t1 = segment["start"]
+        t2 = segment["end"]
+        if t1 >= max_duration:
+            continue
+        f1 = int(t1 * SAMPLE_RATE)
+        f2 = int(t2 * SAMPLE_RATE)
+        waveform_segment = audio[:, f1:f2]
+        if waveform_segment.shape[-1] < 400:
+            waveform_segment = torch.nn.functional.pad(
+                waveform_segment, (0, 400 - waveform_segment.shape[-1])
+            )
+        waves.append(mx.array(waveform_segment.numpy()))
+        keys.append(sdx)
+    if not waves:
+        return {}
+    if hasattr(model, "eval"):
+        model.eval()
+    if hasattr(model, "emit_segments"):
+        outputs = model.emit_segments(waves)
+    else:
+        outputs = []
+        for w in waves:
+            y = model(w if w.ndim == 2 else w[None, :])
+            mx.eval(y)
+            outputs.append(y[0])
+    return {sdx: np.array(out) for sdx, out in zip(keys, outputs)}
+
+
 def align(
     transcript: Iterable[SingleSegment],
     model: torch.nn.Module,
@@ -219,6 +260,12 @@ def align(
     total_segments = len(list(transcript))
     transcript = list(transcript)  # Convert to list if iterator
 
+    try:
+        sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
+    except LookupError:
+        nltk.download("punkt_tab", quiet=True)
+        sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
+
     # Store temporary processing values
     segment_data: dict = {}
     for sdx, segment in enumerate(transcript):
@@ -266,12 +313,6 @@ def align(
                 # index for placeholder
                 clean_wdx.append(wdx)
 
-
-        try:
-            sentence_splitter = nltk_load('tokenizers/punkt/english.pickle')
-        except LookupError:
-            nltk.download('punkt_tab', quiet=True)
-            sentence_splitter = nltk_load('tokenizers/punkt/english.pickle')
         sentence_spans = list(sentence_splitter.span_tokenize(text))
 
         segment_data[sdx] = {
@@ -282,6 +323,12 @@ def align(
         }
 
     aligned_segments: List[SingleAlignedSegment] = []
+
+    mlx_emissions = {}
+    if model_type == "mlx":
+        mlx_emissions = _collect_mlx_emissions(
+            model, audio, transcript, segment_data, MAX_DURATION
+        )
 
     # 2. Get prediction matrix from alignment model & align
     for sdx, segment in enumerate(transcript):
@@ -315,27 +362,23 @@ def align(
         text_clean = "".join(segment_data[sdx]["clean_char"])
         tokens = [model_dictionary.get(c, -1) for c in text_clean]
 
-        f1 = int(t1 * SAMPLE_RATE)
-        f2 = int(t2 * SAMPLE_RATE)
-
-        waveform_segment = audio[:, f1:f2]
-        # Handle the minimum input length for wav2vec2 models
-        if waveform_segment.shape[-1] < 400:
-            lengths = torch.as_tensor([waveform_segment.shape[-1]]).to(device)
-            waveform_segment = torch.nn.functional.pad(
-                waveform_segment, (0, 400 - waveform_segment.shape[-1])
-            )
-        else:
-            lengths = None
-
         if model_type == "mlx":
-            # MLX inference (5-7x faster on Apple Silicon)
-            waveform_np = waveform_segment.numpy()
-            mlx_input = mx.array(waveform_np)
-            mlx_output = model(mlx_input)
-            mx.eval(mlx_output)  # Force evaluation
-            emission_np = np.array(mlx_output[0])
+            emission_np = mlx_emissions.get(sdx)
+            if emission_np is None:
+                aligned_segments.append(aligned_seg)
+                continue
         else:
+            f1 = int(t1 * SAMPLE_RATE)
+            f2 = int(t2 * SAMPLE_RATE)
+            waveform_segment = audio[:, f1:f2]
+            # Handle the minimum input length for wav2vec2 models
+            if waveform_segment.shape[-1] < 400:
+                lengths = torch.as_tensor([waveform_segment.shape[-1]]).to(device)
+                waveform_segment = torch.nn.functional.pad(
+                    waveform_segment, (0, 400 - waveform_segment.shape[-1])
+                )
+            else:
+                lengths = None
             # PyTorch path
             with torch.inference_mode():
                 if model_type == "torchaudio":

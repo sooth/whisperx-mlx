@@ -182,7 +182,7 @@ class SelfAttention(nn.Module):
 
         self.dropout = nn.Dropout(config.attention_dropout)
 
-    def __call__(self, x: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
         batch, seq_len, _ = x.shape
 
         # Project to Q, K, V
@@ -198,6 +198,15 @@ class SelfAttention(nn.Module):
 
         # Attention scores
         attn_weights = (q @ k.transpose(0, 1, 3, 2)) * self.scale
+        if mask is not None:
+            # mask: (batch, seq) True = valid key. Broadcast over heads and queries.
+            # -1e4 not -inf: fp16-safe; padded keys must not change unpadded softmax.
+            key_mask = mask[:, None, None, :]
+            attn_weights = mx.where(
+                key_mask,
+                attn_weights,
+                mx.array(-1e4, dtype=attn_weights.dtype),
+            )
         attn_weights = mx.softmax(attn_weights, axis=-1)
         attn_weights = self.dropout(attn_weights)
 
@@ -240,10 +249,10 @@ class EncoderLayer(nn.Module):
         self.feed_forward = FeedForward(config)
         self.final_layer_norm = nn.LayerNorm(config.hidden_size)
 
-    def __call__(self, x: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
         # Self-attention with residual
         residual = x
-        x = self.attention(x)
+        x = self.attention(x, mask=mask)
         x = self.dropout(x)
         x = residual + x
         x = self.layer_norm(x)
@@ -267,7 +276,7 @@ class Transformer(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout)
         self.layers = [EncoderLayer(config) for _ in range(config.num_hidden_layers)]
 
-    def __call__(self, x: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
         # Add positional embeddings
         pos_embed = self.pos_conv_embed(x)
         x = x + pos_embed
@@ -276,7 +285,7 @@ class Transformer(nn.Module):
 
         # Apply transformer layers
         for layer in self.layers:
-            x = layer(x)
+            x = layer(x, mask=mask)
 
         return x
 
@@ -289,10 +298,23 @@ class Encoder(nn.Module):
         self.feature_projection = FeatureProjection(config)
         self.transformer = Transformer(config)
 
-    def __call__(self, x: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, mask: Optional[mx.array] = None) -> mx.array:
         x = self.feature_projection(x)
-        x = self.transformer(x)
+        x = self.transformer(x, mask=mask)
         return x
+
+
+# Default WAV2VEC2_ASR_BASE_960H feature-encoder convs (no padding).
+_CONV_KERNELS = (10, 3, 3, 3, 3, 2, 2)
+_CONV_STRIDES = (5, 2, 2, 2, 2, 2, 2)
+
+
+def feature_extractor_output_length(n_samples: int) -> int:
+    """Output frames for a valid (unpadded) 1-D conv stack. Matches FeatureExtractor."""
+    n = int(n_samples)
+    for kernel, stride in zip(_CONV_KERNELS, _CONV_STRIDES):
+        n = (n - kernel) // stride + 1
+    return n
 
 
 class Wav2Vec2Model(nn.Module):
@@ -338,6 +360,77 @@ class Wav2Vec2Model(nn.Module):
         log_probs = mx.log(mx.softmax(logits, axis=-1) + 1e-10)
 
         return log_probs
+
+    def emit_segments(
+        self,
+        waveforms: List[mx.array],
+        batch_size: int = 1,
+    ) -> List[mx.array]:
+        """Per-segment wav2vec2 log-probs, fused into one ``mx.eval``.
+
+        Default ``batch_size=1``: each clip uses the same ``__call__`` as the
+        original aligner so CTC word times do not shift. ``batch_size>1``
+        pads *projected* features (not raw audio — conv0 GroupNorm is
+        instance-norm over time) and masks transformer keys.
+
+        Args:
+            waveforms: Each (time,) or (1, time) 16 kHz samples.
+            batch_size: 1 = sequential (word-time exact). >1 = transformer batch.
+
+        Returns:
+            Per-segment log-probs (time_i, vocab), same as ``self(x)[0]``.
+        """
+        self.eval()
+        if not waveforms:
+            return []
+
+        if batch_size <= 1:
+            out: List[mx.array] = []
+            for w in waveforms:
+                x = w if w.ndim == 2 else w[None, :]
+                out.append(self(x)[0])
+            mx.eval(*out)
+            return out
+
+        out = []
+        for start in range(0, len(waveforms), batch_size):
+            chunk = waveforms[start : start + batch_size]
+            if len(chunk) == 1:
+                x = chunk[0]
+                if x.ndim == 1:
+                    x = x[None, :]
+                log_probs = self(x)
+                mx.eval(log_probs)
+                out.append(log_probs[0])
+                continue
+
+            feats: List[mx.array] = []
+            for w in chunk:
+                x = w if w.ndim == 2 else w[None, :]
+                # Project per item, then pad. Conv-padding in pos-embed is zeros;
+                # projecting padded CNN zeros yields a nonzero vector and shifts
+                # every frame of a short sequence (kernel 128).
+                feat = self.feature_extractor(x)
+                feats.append(self.encoder.feature_projection(feat)[0])
+            lengths = [int(f.shape[0]) for f in feats]
+            max_t = max(lengths)
+            padded = mx.stack(
+                [
+                    f
+                    if int(f.shape[0]) == max_t
+                    else mx.pad(f, [(0, max_t - int(f.shape[0])), (0, 0)])
+                    for f in feats
+                ]
+            )
+            mask = mx.arange(max_t)[None, :] < mx.array(lengths)[:, None]
+            padded = padded * mask[:, :, None]
+            hidden = self.encoder.transformer(padded, mask=mask)
+            logits = self.aux(hidden)
+            log_probs = mx.log(mx.softmax(logits, axis=-1) + 1e-10)
+            mx.eval(log_probs)
+            for i, n_frames in enumerate(lengths):
+                out.append(log_probs[i, :n_frames])
+        return out
 
 
 def convert_torch_weights_to_mlx(torch_model) -> dict:
@@ -436,6 +529,8 @@ def load_wav2vec2_from_torchaudio(
 
     # Load weights into model
     model.load_weights(list(weights.items()))
+    # MLX Dropout defaults to training=True (10% drop). Alignment is inference.
+    model.eval()
 
     metadata = {
         "labels": labels,

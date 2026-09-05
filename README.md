@@ -12,20 +12,78 @@ The **default** MLX path (`large-v3`, no extra flags) is the fast path. It batch
 - 8-bit decoder (`bits=8`, `group_size=64`); encoder stays fp16
 - Encoder self-attention via `mx.fast.scaled_dot_product_attention` (dual-scale qk, same greedy tokens)
 - GPU timestamp logit filter, preallocated decoder KV, Metal cache retain + GEMM preheat at model load
-- Word-level timestamps (`--align`) and speaker diarization (`--diarize`)
+- Word-level timestamps (`--align` / `transcribe_with_alignment`); wav2vec2 runs in eval mode (dropout off)
+- Process-level cache of Whisper, Silero, and the aligner (warmup pays load; later calls in the same process reuse weights)
+- Speaker diarization (`--diarize`)
 - Silero VAD on the default transcribe path
 
 ## Performance
 
-Measured on an M4 Max, `short.wav` (~90s), default `large-v3` MLX, Silero VAD, English, greedy temp-0:
+Measured on an M4 Max, `short.wav` (~90s), default `large-v3` MLX, Silero VAD, English, greedy temp-0. Timed runs are post-warmup in one process.
+
+**ASR only** (`transcribe()`, no `--align`):
 
 | Path | Wall time | Notes |
 |---|---|---|
-| Previous default MLX (fp16 decoder, batch 16) | 3.34s median | pre-change baseline |
+| Previous default MLX (fp16 decoder, batch 16) | 3.34s median | ASR-only pre-change |
 | Current default MLX | **2.97–2.99s** overall | two 90s-idle sessions; every pair under 3.17s |
 | Sequential per-VAD-chunk decode | 6.17s median | same machine, same audio |
 
-Normalized WER versus the previous default transcript is **0.0** on that clip. Spoken markers `famous` / `gordon` / `ramsay` still appear. Alignment and diarization are opt-in and are not in these timings.
+Normalized WER versus the previous default ASR transcript is **0.0**. Spoken markers `famous` / `gordon` / `ramsay` still appear.
+
+**ASR + word timestamps** (`transcribe_with_alignment` / CLI `--align`):
+
+| Path | Wall time | Notes |
+|---|---|---|
+| Previous aligned MLX (reload Whisper+Silero+wav2vec2 every call) | 4.81s median | 4.81 / 4.75 / 5.03s |
+| Current aligned MLX | **3.49s** median | 3.46 / 3.52s; **~1.38×** (~27% less); need &lt; 3.85s |
+
+WER versus the previous aligned transcript is **0.0**. Same 268 words; markers appear in the **word** list. Word `start`/`end` match torchaudio wav2vec2 **eval** (dropout off) at 1 ms rounding; two timed runs are identical. Diarization is still opt-in and is not in these timings. A one-shot CLI process still pays model load; the 3.49s bar is reused weights after warmup.
+
+## Changelog
+
+Newest first. Numbers are the same M4 Max / `short.wav` / `large-v3` / Silero / greedy setup as above unless noted.
+
+### 2026-09-05 — aligned path (`--align`)
+
+Word timestamps on, no extra fast flag. Default model still `large-v3`.
+
+| Step | What landed | `short.wav` wall time |
+|---|---|---|
+| Pre-change `transcribe_with_alignment` | reload Whisper + Silero + wav2vec2 every call, then `del` | **4.81s** median |
+| Process-level ASR + align cache | warmup pays load; timed runs still run Silero + decode + CTC | ASR portion ~2.88s once cached |
+| Load NLTK `punkt` **once** per `align()` | was once per segment (49× on this clip) | align 1.02s → **~0.49s** |
+| wav2vec2 `model.eval()` | MLX Dropout defaulted to train (10% drop); eval matches torchaudio | correctness, not the bulk of the 1.3s |
+| **Shipped aligned path** | cache + punkt-once + eval; wav2vec2 still **per-segment** (transformer batch moved 8/268 boxes) | **3.49s** median (~1.38× vs 4.81s) |
+
+Tried and **not** shipped for `--align`: padding raw waveforms into a wav2vec2 batch (conv0 GroupNorm changes every frame), transformer batch with pad mask (8 words shifted, one by 264ms), loading MLX wav2vec2 on a worker thread (`no Stream in current thread`).
+
+Unittest: `tests/test_aligned_path_speed_quality.py` (WER 0.0, markers in words, word-time stability, median &lt; 0.80 × 4.81s).
+
+### 2026-09-04 — `1c40a24`
+
+Default MLX ASR, no extra flag. Greedy tokens match the previous large-v3 transcript (WER 0.0).
+
+| Step | What landed | `short.wav` wall time |
+|---|---|---|
+| Sequential per-VAD-chunk decode | quality/speed baseline (`transcribe_sequential`) | 6.17s median |
+| Batched VAD encode/decode | already default from `1a4b975`; this commit’s pre-change measurement | 3.34s median |
+| GPU timestamp filter, skip greedy logZ, preallocated decoder KV, encoder SDPA (dual-scale), pipeline `batch_size` 16, Silero `inference_mode` + 1 torch thread, reused `DecodingTask` | still fp16 decoder | ~3.15–3.17s cooled overall (not every pair under 3.17s) |
+| **8-bit decoder** (`bits=8`, `group_size=64`); encoder stays fp16 | current default | **2.97s / 2.99s** overall on two independent 90s-idle sessions; every pair under 3.17s; unittest 2.93s vs sequential 6.17s (~2.1×) |
+
+Tried and **not** shipped (WER rose or wall time got worse): `without_timestamps`, decoder SDPA, 8-bit encoder, `mx.compile` encoder wrapper, turbo/distil as default, transcribe-time Metal preheat.
+
+### `c5f2c06` — alignment
+
+MLX Wav2Vec2 encoder + NumPy CTC: **2.6×** faster `--align` than the previous alignment path. Not on the default transcribe path (still `--align`).
+
+### `1a4b975` — batched MLX ASR
+
+True batched encode/decode of VAD chunks (stack mels, one `DecodingTask.run`). About **6–7×** on long files versus sequential per-chunk `mlx_whisper.transcribe`. This is the batched path the later ASR numbers build on.
+
+### `0a0713f`
+
+Faster diarization startup (load diarization in parallel). Not ASR decode.
 
 ## Installation
 
@@ -62,12 +120,18 @@ There is no `--fast` flag. The defaults above are the optimized path.
 ### Python API
 
 ```python
-from whisperx_mlx import transcribe
+from whisperx_mlx import transcribe, transcribe_with_alignment
 
 result = transcribe("audio.mp3", model="large-v3", backend="mlx", language="en")
 
 for segment in result["segments"]:
     print(f"{segment['start']:.2f} - {segment['end']:.2f}: {segment['text']}")
+
+aligned = transcribe_with_alignment(
+    "audio.mp3", model="large-v3", backend="mlx", language="en"
+)
+for w in aligned["word_segments"]:
+    print(f"{w['start']:.2f} - {w['end']:.2f}: {w['word']}")
 ```
 
 ## Models
