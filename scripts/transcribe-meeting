@@ -1,0 +1,85 @@
+#!/bin/zsh
+# transcribe-meeting — one-command meeting transcription on tetra
+# MLX Whisper (GPU) + MLX alignment + pyannote diarization (MPS)
+#
+# Usage: transcribe-meeting [-o output_dir] [-n num_speakers] file [file ...]
+#   -o DIR   where outputs go (default: same directory as each input file)
+#   -n N     exact speaker count, if known (passes min=max=N to pyannote)
+
+set -euo pipefail
+
+VENV="$HOME/whisperx-mlx/.venv"
+export PATH="/opt/homebrew/bin:$PATH"
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+export PYANNOTE_METRICS_ENABLED=false   # no phoning home from work audio
+
+# --- token: env var wins, else HF cache file ---
+TOKEN_FILE="$HOME/.cache/huggingface/token"
+HF_TOKEN="${HF_TOKEN:-$(cat "$TOKEN_FILE" 2>/dev/null || true)}"
+if [[ -z "$HF_TOKEN" ]]; then
+  echo "ERROR: no HuggingFace token in \$HF_TOKEN or $TOKEN_FILE" >&2
+  exit 1
+fi
+
+# --- options ---
+OUTDIR=""
+SPEAKER_ARGS=()
+USAGE="Usage: transcribe-meeting [-o output_dir] [-n num_speakers] [--min-speakers N] [--max-speakers N] file [file ...]"
+FILES=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o|--output-dir)   OUTDIR="${2:?missing argument for -o}"; shift 2 ;;
+    -n|--num-speakers) SPEAKER_ARGS+=(--min-speakers "${2:?missing argument for -n}" --max-speakers "$2"); shift 2 ;;
+    --min-speakers)    SPEAKER_ARGS+=(--min-speakers "${2:?missing argument for --min-speakers}"); shift 2 ;;
+    --max-speakers)    SPEAKER_ARGS+=(--max-speakers "${2:?missing argument for --max-speakers}"); shift 2 ;;
+    -h|--help)         echo "$USAGE"; exit 0 ;;
+    --)                shift; FILES+=("$@"); break ;;
+    -*)                echo "Unknown option: $1" >&2; echo "$USAGE" >&2; exit 1 ;;
+    *)                 FILES+=("$1"); shift ;;
+  esac
+done
+
+if [[ ${#FILES[@]} -eq 0 ]]; then
+  echo "$USAGE" >&2
+  exit 1
+fi
+set -- "${FILES[@]}"
+
+for INPUT in "$@"; do
+  if [[ ! -f "$INPUT" ]]; then
+    echo "SKIP (not found): $INPUT" >&2
+    continue
+  fi
+
+  STEM="${${INPUT:t}%.*}"                      # basename without extension
+  DEST="${OUTDIR:-${INPUT:h}}"                 # -o dir, else input's dir
+  mkdir -p "$DEST"
+
+  T0=$(date +%s)
+  echo "==> $INPUT"
+
+  # pyannote chokes on lossy-format seek imprecision: always feed it WAV
+  TMPD=$(mktemp -d)
+  trap 'rm -rf "$TMPD"' EXIT
+  WAV="$TMPD/$STEM.wav"
+  echo "    converting to 16kHz mono WAV..."
+  ffmpeg -hide_banner -loglevel error -y -i "$INPUT" -ar 16000 -ac 1 "$WAV"
+
+  echo "    transcribing + aligning + diarizing..."
+  "$VENV/bin/whisperx-mlx" "$WAV" \
+    --model large-v3 \
+    --verbose \
+    --align \
+    --diarize \
+    --hf-token "$HF_TOKEN" \
+    "${SPEAKER_ARGS[@]}" \
+    --output-dir "$DEST" \
+    --output-format all
+
+  python3 "${0:A:h}/tm-speakers.py" "$DEST/$STEM.json"
+  rm -rf "$TMPD"
+  trap - EXIT
+
+  T1=$(date +%s)
+  echo "    done in $((T1 - T0))s -> $DEST/$STEM.{txt,srt,json,vtt,tsv}"
+done

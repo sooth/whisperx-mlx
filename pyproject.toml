@@ -28,6 +28,7 @@ dependencies = [
 
     # Alignment & Diarization
     "pyannote-audio>=3.1.0",
+    "scipy>=1.10.0",  # wav decode/resample fallback for in-memory diarization input
 
     # Audio processing
     "av>=10.0.0",
@@ -133,3 +134,6 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
