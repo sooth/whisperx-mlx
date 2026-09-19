@@ -22,12 +22,19 @@ classifiers = [
 dependencies = [
     # Core ML dependencies
     "torch>=2.0.0",
-    "torchaudio>=2.0.0",
+    # NOTE: torchaudio 2.9+ removed AudioMetaData which pyannote-audio 3.x needs
+    # See: https://github.com/pyannote/pyannote-audio/issues/1952
+    # TODO: Remove <2.9.0 constraint when pyannote-audio is fixed or we move to 4.x
+    "torchaudio>=2.0.0,<2.9.0",
     "transformers>=4.40.0",
     "numpy>=1.24.0",
 
     # Alignment & Diarization
-    "pyannote-audio>=3.1.0",
+    # NOTE: pyannote-audio 4.x requires torchcodec which doesn't work on macOS ARM64
+    # (libtorchcodec_coreX.dylib fails to load). Pin to <4.0 until torchcodec is stable.
+    # TODO: Remove <4.0 constraint when torchcodec works on macOS ARM64
+    # Track: https://github.com/pytorch/torchcodec/issues (macos/arm64 issues)
+    "pyannote-audio>=3.1.0,<4.0.0",
 
     # Audio processing
     "av>=10.0.0",

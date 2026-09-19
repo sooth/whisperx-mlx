@@ -62,11 +62,24 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
         self.pipeline = None
 
         try:
+            # Fix for PyTorch 2.6+: weights_only=True is now default in torch.load
+            # PyAnnote models use classes that aren't in the default safe list
+            # See: https://github.com/pyannote/pyannote-audio/issues/1908
+            from torch.torch_version import TorchVersion
+            from pyannote.audio.core.task import Specifications, Problem, Resolution
+            torch.serialization.add_safe_globals([
+                TorchVersion,
+                Specifications,
+                Problem,
+                Resolution,
+            ])
+
             from pyannote.audio import Pipeline
 
+            # Fix for PyAnnote 4.0+: 'use_auth_token' was renamed to 'token'
             self.pipeline = Pipeline.from_pretrained(
                 model_name,
-                use_auth_token=use_auth_token,
+                token=use_auth_token,
             )
             self.pipeline.to(torch.device(device))
             logger.info(f"Loaded pyannote diarization model: {model_name} on {device}")
@@ -129,6 +142,11 @@ class PyannoteDiarizationPipeline(DiarizationBackend):
             # Run diarization
             logger.debug(f"Running pyannote diarization on {audio_input}")
             diarization = self.pipeline(audio_input, **kwargs)
+
+            # Fix for PyAnnote 4.0+: pipeline returns DiarizeOutput wrapper instead of Annotation
+            # Extract the Annotation object which has the itertracks() method
+            if hasattr(diarization, 'speaker_diarization'):
+                diarization = diarization.speaker_diarization
 
             # Convert to segments
             segments = []
